@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from instagrapi import Client
 
 load_dotenv()
-SESSION_ID=os.getenv("INSTAGRAM_SESSION_ID","").strip()
+SESSION_ID=os.getenv("INSTAGRAM_SESSION_ID","19088037883%3AQEE5oTG6apmh4F%3A18%3AAYnoGrgpBgyt3jyMGWDnpi3lmU3LoAkzUtsormQlDg").strip()
 REGISTRY_THREAD_ID=os.getenv("REGISTRY_THREAD_ID","").strip()
 DB_PATH=os.getenv("DB_PATH","smw_spammer_registry.db")
 BOT_USERNAME=os.getenv("BOT_USERNAME","SMW_BOT")
