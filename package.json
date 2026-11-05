@@ -1,13 +1,23 @@
 {
-  "name": "jarvis-cloud-brain",
-  "version": "1.0.0",
+  "name": "smw-os-bot",
+  "version": "8.0.0",
+  "description": "SMW OS Ultra WhatsApp Multi-Bot Manager 24/7",
+  "main": "smw_os_fixed.mjs",
   "type": "module",
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node smw_os_fixed.mjs"
   },
   "dependencies": {
-    "@google/genai": "latest",
-    "express": "^4.19.2"
+    "@andresaya/edge-tts": "^1.1.2",
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^6.7.12",
+    "canvas": "^2.11.2",
+    "ffmpeg-static": "^5.2.0",
+    "pino": "^8.19.0",
+    "qrcode-terminal": "^0.12.0",
+    "twemoji-parser": "^14.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   }
 }
