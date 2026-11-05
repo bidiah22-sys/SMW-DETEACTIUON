@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════╗
-// ║                  𝗠𝗔𝗥𝗞 𝗢𝗦                     ║
-// ║         Multi-Bot WhatsApp Manager           ║
+// ║                  𝗠𝗔𝗥𝗞 𝗜𝗢𝗦                     ║
+// ║        High-Performance WhatsApp Manager     ║
 // ╚══════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -8,46 +8,38 @@ import makeWASocket, {
     DisconnectReason,
     delay,
     fetchLatestBaileysVersion,
-    Browsers,
-    downloadMediaMessage
+    Browsers
 } from '@whiskeysockets/baileys';
-import { Boom }          from '@hapi/boom';
-import pino              from 'pino';
-import fs                from 'fs';
-import readline          from 'readline';
-import { EdgeTTS }       from '@andresaya/edge-tts';
-import { spawnSync }     from 'child_process';
-import ffmpegPath        from 'ffmpeg-static';
-import { createCanvas, loadImage } from 'canvas';
-import { parse as twParse }        from 'twemoji-parser';
+import pino from 'pino';
+import fs from 'fs';
 
 // ─────────────────────────────────────────────
 //  STORAGE PATHS & CONFIG
 // ─────────────────────────────────────────────
 const PATH_AUTH    = (id) => `./sessions/mark_session_${id}`;
 const PATH_USERS   = './store/users.json';
-const PATH_NETWORK = './store/network.json';
 const PATH_TIMING  = './store/timing.json';
 const PATH_PREFIX  = './store/prefix.json';
-const PATH_SAVED   = './store/saved.json';
-const PATH_BANNER      = './store/banner.jpg';
-const PATH_BANNER_VID  = './store/banner.mp4';
-const PATH_BIO         = './store/bio.txt';
 
-// Setting only the 55 ending phone number as admin
-const ADMIN_NUMBERS = ["919170260855@s.whatsapp.net"];
+// Admin numbers list
+const ADMIN_NUMBERS = [
+    "919170260855@s.whatsapp.net",
+    "27837192224@s.whatsapp.net",
+    "9779740849505@s.whatsapp.net",
+    "919129061861@s.whatsapp.net"
+];
 
-// ── AUTO-INSTALL COOKIES ─────────────────────
+// ── AUTO-INSTALL COOKIES & STORE SETUP ───────
 try {
-    fs.mkdirSync('./store', {recursive:true});
-    if(!fs.existsSync('./store/cookies.txt')){
-        const b64 = "IyBOZXRzY2FwZSBIVFRQIENvb2tpZSBGaWxlCiMgaHR0cHM6Ly9jdXJsLmhheHguc2UvcmZjL2Nvb2tpZV9zcGVjLmh0bWwKIyBUaGlz iblzIGEgc2VudXJhdGVkIGZpbGUhIERvIG5vdCBlZGl0LgoKLnlvdXR1YmUuY29tCVRSVUUJLwlUUlVFCTE3OTE0OTgzNDEJX19TZWN1cmUtQlVDS0VUCUNLSUQKLnlvdXR1YmUuY29tCVRSVUUJLwlUUlVFCTE3NzU5NDgxNDEJR1BTCTEKLnlvdXR1YmUuY29tCVRSVUUJLwlUUlVFCTE3OTE0OTkwMjEJVklTSVRPUl9JTkZPMV9MSVZFCXpxUWxlYVZnNlJZCi55b3V0dWJlLmNvbQlUUlVFCS8JVFJVRQkxNzkxNDk5MDIxCVZJU0lUT1JfUFJJVkFDWV9NRVRBREFUQQlDZ0pWVXhJRUdnQWdQZyUzRCUzRAoueW91dHViZS5jb20JVFJVRQkvCVRSVUUJMTgxMDUwNjM0MglfX1NlY3VyZS0zUEFQSVNJRAlSd1J4MVAweFdPaThTS1dJL0FJOHVoZWxDTmpKQl9TTW9ICi55b3V0dWJlLmNvbQlUUlVFCS8JVFJVRQkxODEwNTA2MzQyCV9fU2VjdXJlLTNQU0lECWcuYTAwMDh3aWo2STFBeTFGMThpRWFlejZFUEEyMFlBQmpGenFUaHJfMnA0RGRVYVNrNVBxdFNleEowTFlqU2c0UUV1MVNQd1R3MlFBQ2dZS0FiNFNBUkVTRlFIR1gyTWlNZThZdUpvT28zTnJkX29lNnU3djV4b1ZBVUY4eUtwUG9DMUZSTWNqWlZQR0pWQ0FGbTcxMDA3Ng==";
+    fs.mkdirSync('./store', { recursive: true });
+    if (!fs.existsSync('./store/cookies.txt')) {
+        const b64 = "IyBOZXRzY2FwZSBIVFRQIENvb2tpZSBGaWxlCiMgaHR0cHM6Ly9jdXJsLmhheHguc2UvcmZjL2Nvb2tpZV9zcGVjLmh0bWwKIyBUaGlzIGlzIGEgZ2VuZXJhdGVkIGZpbGUhIERvIG5vdCBlZGl0LgoKLnlvdXR1YmUuY29tCVRSVUUJLwlUUlVFCTE3OTE0OTgzNDEJX19TZWN1cmUtQlVDS0VUCUNLSUQ=";
         fs.writeFileSync('./store/cookies.txt', Buffer.from(b64, 'base64').toString('utf8'));
     }
-} catch(e) {}
+} catch (e) {}
 
 // ─────────────────────────────────────────────
-//  EMOJI BANKS
+//  EMOJI BANKS & FONT CONVERTER
 // ─────────────────────────────────────────────
 const SETS = {
     faces:   ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
@@ -59,9 +51,6 @@ const SETS = {
     fruits:  ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
 };
 
-// ─────────────────────────────────────────────
-//  FONT CONVERTER
-// ─────────────────────────────────────────────
 const GLYPH = {
     a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',
     m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'ꜱ',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ',
@@ -71,20 +60,20 @@ const GLYPH = {
 const g = str => String(str).split('').map(c => GLYPH[c] ?? c).join('');
 
 const ITALIC_GLYPH = {
-    a:'𝘢',b:'𝘣',c:'𝘤',d:'𝘥',e:'𝘦',f:'𝘧',g:'𝘨',h:'𝘩',i:'𝘪',j:'𝘫',k:'𝘬',l:'𝘭',m:'𝘮',n:'𝘯',o:'𝘰',p:'𝘱',q:'𝘲',r:'𝘳',s:'𝘴',t:'𝘵',u:'𝘶',v:'𝘷',w:'𝘸',x:'𝘹',y:'𝘺',z:'𝘻'
+    a:'𝘢',b:'𝘣',c:'𝘤',d:'𝘥',e:'𝘦',f:'𝘧',g:'𝘨',h:'𝘩',i:'𝘪',j:'𝘫',k:'𝘬',l:'𝘭',m:'𝘮',n:'𝘯',o:'𝘰',p:'𝘱',q:'𝘲',r:'𝘳',s:'𝘴',t:'𝘵',u:'ᴜ',v:'ᴠ',w:'𝘸',x:'𝘹',y:'𝘺',z:'𝘻'
 };
 const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join('');
 
 // ─────────────────────────────────────────────
-//  MENUS (UPDATED WITH MARK AI THEME)
+//  MENUS (MARK IOS THEME)
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🎀  𝗠𝗔𝗥𝗞  𝗢𝗦  𝗔𝗜  𝗔𝗦𝗦𝗜𝗦𝗧𝗔𝗡𝗧  v10  🚩  │
+  │  🎀  𝗠𝗔𝗥𝗞  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
   ├─────────────────────────────────────────┤
   │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
   │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗠𝗔𝗥𝗞                  │
-  │  🚀 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝗢𝗻𝗹𝗶𝗻𝗲 & 𝗥𝗲𝗮𝗱𝘆           │
+  │  🚀 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝗣𝗲𝗿𝗺𝗮𝗻𝗲𝗻𝘁 & 𝗔𝗰𝘁𝗶𝘃𝗲         │
   └─────────────────────────────────────────┘
 
   📂  *${g('CORE COMMAND MENUS')}*
@@ -110,7 +99,7 @@ const MENU_TEXT = () => `
   │  👑  ${PREFIX}admin    ➔ ${g('Claim Owner')}    │
   │  🛑  ${PREFIX}killall  ➔ ${g('Stop All Loops')} │
   └─────────────────────────────────────────┘
-  ✨ *𝗬𝗼𝘂𝗿 𝗰𝘂𝘁𝗲 𝗹𝗶𝘁𝘁𝗹𝗲 𝗔𝗜 𝗮𝘀𝘀𝗶𝘀𝘁𝗮𝗻𝘁* 💗`;
+  ✨ *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗠𝗔𝗥𝗞 𝗜𝗢𝗦* 💗`;
 
 const TARGET_MENU = () => `
   ┌─────────────────────────────────────────┐
@@ -170,19 +159,12 @@ const GAMES_MENU = () => `
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✨ *𝗘𝗻𝗷𝗼𝘆 𝗬𝗼𝘂𝗿 𝗧𝗶𝗺𝗲* 🌸`;
 
-const TAG  = `🎀 𝗠𝗔𝗥𝗞 𝗔𝗜 𝗯𝘆 𝗠𝗔𝗥𝗞 🚩`;
+const TAG  = `🎀 𝗠𝗔𝗥𝗞 𝗜𝗢𝗦 𝗯𝘆 𝗠𝗔𝗥𝗞 🚩`;
 const win  = what => `
   ┌─────────────────────────┐
   │  ✨ 𝗔𝗖𝗧𝗜𝗩𝗔𝗧𝗘𝗗          │
   └─────────────────────────┘
   ▶ ${g(what)} ${g('is now running successfully!')}
-  💗 *${TAG}*`;
-
-const lose = what => `
-  ┌─────────────────────────┐
-  │  🛑 𝗦𝗧𝗢𝗣𝗣𝗘𝗗             │
-  └─────────────────────────┘
-  ◼ ${g(what)} ${g('has been successfully killed.')}
   💗 *${TAG}*`;
 
 // ─────────────────────────────────────────────
@@ -234,12 +216,12 @@ class Router {
 }
 
 // ═════════════════════════════════════════════
-//  SESSION MANAGER
+//  SESSION MANAGER (POWERFUL & AUTO-RECONNECT)
 // ═════════════════════════════════════════════
 class Session {
     constructor(id,phone,hub){
         this.id        = id;
-        this.phone     = phone || "919170260855";
+        this.phone     = phone;
         this.hub       = hub;
         this.socket    = null;
         this.online    = false;
@@ -262,18 +244,22 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome")
+                browser: Browsers.ubuntu("Chrome"),
+                keepAliveIntervalMs: 30000,
+                connectTimeoutMs: 60000,
+                defaultQueryTimeoutMs: 60000
             });
 
             if (!this.socket.authState.creds.registered) {
                 setTimeout(async () => {
                     try {
                         const code = await this.socket.requestPairingCode(this.phone);
-                        console.log(`\n========================================`);
-                        console.log(`🔑 WHATSAPP PAIRING CODE [${this.id}]: ${code}`);
-                        console.log(`========================================\n`);
+                        console.log(`\n==================================================`);
+                        console.log(`📱 NUMBER       : +${this.phone}`);
+                        console.log(`🔑 PAIRING CODE : ${code}`);
+                        console.log(`==================================================\n`);
                     } catch (e) {
-                        console.log(`[${this.id}] Pairing error:`, e.message);
+                        console.log(`❌ [+${this.phone}] Pairing code error:`, e.message);
                     }
                 }, 4000);
             }
@@ -284,19 +270,26 @@ class Session {
                 if (connection === "open") {
                     this.online = true;
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-                    console.log(`✅ MARK Bot (${this.id}) Connected Successfully! 🚩`);
+                    console.log(`✅ MARK IOS Bot [+${this.phone}] Connected & Active Permanent! 🚩`);
                 } else if (connection === "close") {
                     this.online = false;
-                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+                    const statusCode = lastDisconnect?.error?.output?.statusCode;
+                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                    
+                    console.log(`⚠️ [+${this.phone}] Connection closed (Reason Code: ${statusCode}). Reconnecting...`);
+                    
                     if (shouldReconnect) {
-                        setTimeout(() => this.init(), 3000);
+                        setTimeout(() => this.init(), 3000); // PERMANENT RECONNECT
+                    } else {
+                        console.log(`❌ [+${this.phone}] Session Logged Out. Please restart session.`);
                     }
                 }
             });
 
             this.socket.ev.on('messages.upsert', m => this.receive(m));
         } catch(e) {
-            console.error(`[${this.id}] Login Initialization Error:`, e.message);
+            console.error(`❌ [+${this.phone}] Critical Initialization Error:`, e.message);
+            setTimeout(() => this.init(), 5000); // Retry init on error
         }
     }
 
@@ -444,23 +437,39 @@ class Hub {
     }
 
     async boot(){
-        const id = "1";
-        const s = new Session(id, "919170260855", this);
-        this.sessions.set(id, s);
-        this.router.attach(id, s);
-        await s.init();
+        const numbers = [
+            "919170260855",
+            "27837192224",
+            "9779740849505",
+            "919129061861"
+        ];
+
+        for (let i = 0; i < numbers.length; i++) {
+            const id = String(i + 1);
+            const phone = numbers[i];
+            const s = new Session(id, phone, this);
+            this.sessions.set(id, s);
+            this.router.attach(id, s);
+            await s.init();
+            await delay(3000);
+        }
     }
 }
 
 console.log(`
-◈  𝗠𝗔𝗥𝗞 𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
+◈  𝗠𝗔𝗥𝗞 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  MARK OS Multi-Bot Ready & Connected!
+  MARK IOS Multi-Bot Permanent Online System!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
-process.on('uncaughtException', () => {});
-process.on('unhandledRejection', () => {});
+// ── GLOBAL ERROR SHIELD (PREVENTS CRASHES) ──
+process.on('uncaughtException', (err) => {
+    console.log('⚠️ Handled Uncaught Exception:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+    console.log('⚠️ Handled Unhandled Rejection:', reason);
+});
 
 const hub = new Hub();
 await hub.boot();
