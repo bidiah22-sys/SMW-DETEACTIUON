@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════╗
-// ║                  𝗠𝗔𝗥𝗞 𝗜𝗢𝗦                     ║
-// ║        High-Performance WhatsApp Manager     ║
+// ║                    𝗠𝗔𝗥𝗞                      ║
+// ║         Multi-Bot WhatsApp Manager           ║
 // ╚══════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -10,47 +10,57 @@ import makeWASocket, {
     fetchLatestBaileysVersion,
     Browsers
 } from '@whiskeysockets/baileys';
-import pino from 'pino';
-import fs from 'fs';
+import { Boom }          from '@hapi/boom';
+import pino              from 'pino';
+import fs                from 'fs';
+import readline          from 'readline';
+import { EdgeTTS }       from '@andresaya/edge-tts';
+import { spawnSync }     from 'child_process';
+import ffmpegPath        from 'ffmpeg-static';
+import { createCanvas, loadImage } from 'canvas';
+import { parse as twParse }        from 'twemoji-parser';
 
 // ─────────────────────────────────────────────
 //  STORAGE PATHS & CONFIG
 // ─────────────────────────────────────────────
 const PATH_AUTH    = (id) => `./sessions/mark_session_${id}`;
 const PATH_USERS   = './store/users.json';
+const PATH_NETWORK = './store/network.json';
 const PATH_TIMING  = './store/timing.json';
 const PATH_PREFIX  = './store/prefix.json';
+const PATH_SAVED   = './store/saved.json';
+const PATH_BANNER      = './store/banner.jpg';
+const PATH_BANNER_VID  = './store/banner.mp4';
+const PATH_BIO         = './store/bio.txt';
 
-// Admin numbers list
-const ADMIN_NUMBERS = [
-    "919170260855@s.whatsapp.net",
-    "27837192224@s.whatsapp.net",
-    "9779740849505@s.whatsapp.net",
-    "919129061861@s.whatsapp.net"
-];
+// Setting your updated number as admin
+const ADMIN_NUMBERS = ["27837192224@s.whatsapp.net"];
 
-// ── AUTO-INSTALL COOKIES & STORE SETUP ───────
+// ── AUTO-INSTALL COOKIES ─────────────────────
 try {
-    fs.mkdirSync('./store', { recursive: true });
-    if (!fs.existsSync('./store/cookies.txt')) {
-        const b64 = "IyBOZXRzY2FwZSBIVFRQIENvb2tpZSBGaWxlCiMgaHR0cHM6Ly9jdXJsLmhheHguc2UvcmZjL2Nvb2tpZV9zcGVjLmh0bWwKIyBUaGlzIGlzIGEgZ2VuZXJhdGVkIGZpbGUhIERvIG5vdCBlZGl0LgoKLnlvdXR1YmUuY29tCVRSVUUJLwlUUlVFCTE3OTE0OTgzNDEJX19TZWN1cmUtQlVDS0VUCUNLSUQ=";
+    fs.mkdirSync('./store', {recursive:true});
+    if(!fs.existsSync('./store/cookies.txt')){
+        const b64 = "IyBOZXRzY2FwZSmvQ29va2llIEZpbGUh";
         fs.writeFileSync('./store/cookies.txt', Buffer.from(b64, 'base64').toString('utf8'));
     }
-} catch (e) {}
+} catch(e) {}
 
 // ─────────────────────────────────────────────
-//  EMOJI BANKS & FONT CONVERTER
+//  EMOJI BANKS
 // ─────────────────────────────────────────────
 const SETS = {
-    faces:   ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    faces:   ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
     hearts:  ['🖤','❤️','🤍','🤎','🩷','🧡','💛','💚','💙','💜','🩵','🖤','❤️','🤍','🤎'],
-    hands:   ['🔥','🚩','⚡','👑','💀','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    flowers: ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    sky:     ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    animals: ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    fruits:  ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    hands:   ['🔥','🐣','⚡','👑','💀','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    flowers: ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    sky:     ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    animals: ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    fruits:  ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
 };
 
+// ─────────────────────────────────────────────
+//  FONT CONVERTER
+// ─────────────────────────────────────────────
 const GLYPH = {
     a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',
     m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'ꜱ',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ',
@@ -60,20 +70,20 @@ const GLYPH = {
 const g = str => String(str).split('').map(c => GLYPH[c] ?? c).join('');
 
 const ITALIC_GLYPH = {
-    a:'𝘢',b:'𝘣',c:'𝘤',d:'𝘥',e:'𝘦',f:'𝘧',g:'𝘨',h:'𝘩',i:'𝘪',j:'𝘫',k:'𝘬',l:'𝘭',m:'𝘮',n:'𝘯',o:'𝘰',p:'𝘱',q:'𝘲',r:'𝘳',s:'𝘴',t:'𝘵',u:'ᴜ',v:'ᴠ',w:'𝘸',x:'𝘹',y:'𝘺',z:'𝘻'
+    a:'𝘢',b:'𝘣',c:'𝘤',d:'𝘥',e:'𝘦',f:'𝘧',g:'𝘨',h:'𝘩',i:'𝘪',j:'𝘫',k:'𝘬',l:'𝘭',m:'𝘮',n:'𝘯',o:'𝘰',p:'𝘱',q:'𝘲',r:'𝘳',s:'𝘴',t:'𝘵',u:'𝘶',v:'𝘷',w:'𝘸',x:'𝘹',y:'𝘺',z:'𝘻'
 };
 const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join('');
 
 // ─────────────────────────────────────────────
-//  MENUS (MARK IOS THEME)
+//  MENUS (MARK THEME)
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🎀  𝗠𝗔𝗥𝗞  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
+  │  🐣  𝗠𝗔𝗥𝗞  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🐣           │
   ├─────────────────────────────────────────┤
   │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
-  │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗠𝗔𝗥𝗞                  │
-  │  🚀 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝗣𝗲𝗿𝗺𝗮𝗻𝗲𝗻𝘁 & 𝗔𝗰𝘁𝗶𝘃𝗲         │
+  │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗠𝗔𝗥𝗞                │
+  │  🚀 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝗢𝗻𝗹𝗶𝗻𝗲 & 𝗥𝗲𝗮𝗱𝘆           │
   └─────────────────────────────────────────┘
 
   📂  *${g('CORE COMMAND MENUS')}*
@@ -99,7 +109,7 @@ const MENU_TEXT = () => `
   │  👑  ${PREFIX}admin    ➔ ${g('Claim Owner')}    │
   │  🛑  ${PREFIX}killall  ➔ ${g('Stop All Loops')} │
   └─────────────────────────────────────────┘
-  ✨ *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗠𝗔𝗥𝗞 𝗜𝗢𝗦* 💗`;
+  🐣 *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗠𝗔𝗥𝗞* 💗`;
 
 const TARGET_MENU = () => `
   ┌─────────────────────────────────────────┐
@@ -126,12 +136,15 @@ const DL_MENU = () => `
   │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
   └─────────────────────────────────────────┘
 
-  🎵  *${g('SONG DOWNLOADER')}*
-  • ${PREFIX}song [song name]
-    ↳ ${g('Fast audio retrieval & dispatch')}
+  🎵  *${g('EXACT MP4 AUDIO DOWNLOADER')}*
+  • ${PREFIX}song [name]  ➔ ${g('MP4 Audio File')}
+  • ${PREFIX}play [name]  ➔ ${g('Voice Note (PTT)')}
+
+  📹  *${g('VIDEO DOWNLOADER')}*
+  • ${PREFIX}video [name] ➔ ${g('Direct MP4 Video')}
 
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  📥 *𝗠𝗲𝗱𝗶𝗮 𝗘𝗻𝗴𝗶𝗻𝗲 𝗥𝗲𝗮𝗱𝘆* 🚀`;
+  📥 *Smart Media Engine Active* 🚀`;
 
 const GRP_MENU = () => `
   ┌─────────────────────────────────────────┐
@@ -159,7 +172,7 @@ const GAMES_MENU = () => `
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✨ *𝗘𝗻𝗷𝗼𝘆 𝗬𝗼𝘂𝗿 𝗧𝗶𝗺𝗲* 🌸`;
 
-const TAG  = `🎀 𝗠𝗔𝗥𝗞 𝗜𝗢𝗦 𝗯𝘆 𝗠𝗔𝗥𝗞 🚩`;
+const TAG  = `🐣 𝗠𝗔𝗥𝗞 𝗕𝗼𝘁 🐣`;
 const win  = what => `
   ┌─────────────────────────┐
   │  ✨ 𝗔𝗖𝗧𝗜𝗩𝗔𝗧𝗘𝗗          │
@@ -216,12 +229,12 @@ class Router {
 }
 
 // ═════════════════════════════════════════════
-//  SESSION MANAGER (POWERFUL & AUTO-RECONNECT)
+//  SESSION MANAGER
 // ═════════════════════════════════════════════
 class Session {
     constructor(id,phone,hub){
         this.id        = id;
-        this.phone     = phone;
+        this.phone     = phone || "27837192224";
         this.hub       = hub;
         this.socket    = null;
         this.online    = false;
@@ -244,22 +257,18 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
-                keepAliveIntervalMs: 30000,
-                connectTimeoutMs: 60000,
-                defaultQueryTimeoutMs: 60000
+                browser: Browsers.ubuntu("Chrome")
             });
 
             if (!this.socket.authState.creds.registered) {
                 setTimeout(async () => {
                     try {
                         const code = await this.socket.requestPairingCode(this.phone);
-                        console.log(`\n==================================================`);
-                        console.log(`📱 NUMBER       : +${this.phone}`);
-                        console.log(`🔑 PAIRING CODE : ${code}`);
-                        console.log(`==================================================\n`);
+                        console.log(`\n========================================`);
+                        console.log(`🔑 WHATSAPP PAIRING CODE [${this.id}]: ${code}`);
+                        console.log(`========================================\n`);
                     } catch (e) {
-                        console.log(`❌ [+${this.phone}] Pairing code error:`, e.message);
+                        console.log(`[${this.id}] Pairing error:`, e.message);
                     }
                 }, 4000);
             }
@@ -270,26 +279,22 @@ class Session {
                 if (connection === "open") {
                     this.online = true;
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-                    console.log(`✅ MARK IOS Bot [+${this.phone}] Connected & Active Permanent! 🚩`);
+                    console.log(`✅ MARK Bot (${this.id}) Connected Successfully! 🐣`);
                 } else if (connection === "close") {
                     this.online = false;
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                    
-                    console.log(`⚠️ [+${this.phone}] Connection closed (Reason Code: ${statusCode}). Reconnecting...`);
-                    
+                    this.nameLoops.clear();
+                    this.txtLoop.clear();
+
+                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
                     if (shouldReconnect) {
-                        setTimeout(() => this.init(), 3000); // PERMANENT RECONNECT
-                    } else {
-                        console.log(`❌ [+${this.phone}] Session Logged Out. Please restart session.`);
+                        setTimeout(() => this.init(), 3000);
                     }
                 }
             });
 
             this.socket.ev.on('messages.upsert', m => this.receive(m));
         } catch(e) {
-            console.error(`❌ [+${this.phone}] Critical Initialization Error:`, e.message);
-            setTimeout(() => this.init(), 5000); // Retry init on error
+            console.error(`[${this.id}] Login Initialization Error:`, e.message);
         }
     }
 
@@ -333,20 +338,70 @@ class Session {
                 await this.hub.router.pushAll('kill_all',{chat},this.id); return;
             }
 
-            // ── SONG DOWNLOADER ──
-            if(body.toLowerCase().startsWith(`${PREFIX}song `)){
-                const query = body.slice(PREFIX.length + 5).trim();
+            // ── EXACT MP4 AUDIO & VOICE NOTE DOWNLOADER ──
+            if(body.toLowerCase().startsWith(`${PREFIX}song `) || body.toLowerCase().startsWith(`${PREFIX}play `)){
+                const isVoiceNote = body.toLowerCase().startsWith(`${PREFIX}play `);
+                const query = body.slice(isVoiceNote ? 6 : 6).trim();
                 if(!query) return;
-                await this.send(chat, `${TAG}\n\n🔍 Searching song: *${query}*...`);
+
+                await this.send(chat, `${TAG}\n\n🔍 Searching track: *${query}*...`);
                 try {
-                    const res = await fetch(`https://saavnapi-nine.vercel.app/result/?query=${encodeURIComponent(query)}`);
-                    const json = await res.json();
-                    const song = Array.isArray(json) ? json[0] : null;
-                    if(!song?.media_url){ await this.send(chat,`❌ Song not found!`); return; }
-                    const audioBuffer = Buffer.from(await (await fetch(song.media_url)).arrayBuffer());
-                    await this.socket.sendMessage(chat,{ audio: audioBuffer, mimetype: 'audio/mpeg' });
+                    let audioUrl = null;
+                    const res1 = await fetch(`https://api.vreden.web.id/api/ytmp3?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`).catch(()=>null);
+                    if (res1 && res1.ok) {
+                        const json1 = await res1.json();
+                        audioUrl = json1?.result?.download?.url || json1?.result?.url;
+                    }
+
+                    if (!audioUrl) {
+                        const res2 = await fetch(`https://delirius-api-oficial.vercel.app/download/ytmp3?query=${encodeURIComponent(query)}`).catch(()=>null);
+                        if (res2 && res2.ok) {
+                            const json2 = await res2.json();
+                            audioUrl = json2?.data?.download?.url || json2?.data?.url;
+                        }
+                    }
+
+                    if (!audioUrl) {
+                        await this.send(chat, `❌ Song not found! Try writing artist name too.`);
+                        return;
+                    }
+
+                    const audioBuffer = Buffer.from(await (await fetch(audioUrl)).arrayBuffer());
+                    
+                    if (isVoiceNote) {
+                        await this.socket.sendMessage(chat, { audio: audioBuffer, mimetype: 'audio/mp4', ptt: true });
+                    } else {
+                        await this.socket.sendMessage(chat, { audio: audioBuffer, mimetype: 'audio/mp4', fileName: `${query}.mp4` });
+                    }
                 } catch {
-                    await this.send(chat, `❌ Download failed!`);
+                    await this.send(chat, `❌ Failed to download song!`);
+                }
+                return;
+            }
+
+            // ── DIRECT VIDEO DOWNLOADER ──
+            if(body.toLowerCase().startsWith(`${PREFIX}video `)){
+                const query = body.slice(PREFIX.length + 6).trim();
+                if(!query) return;
+
+                await this.send(chat, `${TAG}\n\n📹 Downloading Video: *${query}*... Please wait.`);
+                try {
+                    let videoUrl = null;
+                    const res1 = await fetch(`https://api.vreden.web.id/api/ytmp4?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`).catch(()=>null);
+                    if (res1 && res1.ok) {
+                        const json1 = await res1.json();
+                        videoUrl = json1?.result?.download?.url || json1?.result?.url;
+                    }
+
+                    if (!videoUrl) {
+                        await this.send(chat, `❌ Could not find video for: *${query}*`);
+                        return;
+                    }
+
+                    const videoBuffer = Buffer.from(await (await fetch(videoUrl)).arrayBuffer());
+                    await this.socket.sendMessage(chat, { video: videoBuffer, caption: `🎥 *${query}*\n\n${TAG}`, mimetype: 'video/mp4' });
+                } catch {
+                    await this.send(chat, `❌ Video download failed!`);
                 }
                 return;
             }
@@ -398,9 +453,10 @@ class Session {
             }
             case 'txt_start':{
                 const {txt,ms}=payload;
-                this.txtLoop.set(`${chat}__txt`, { on: true });
+                const txtKey = `${chat}__txt`;
+                this.txtLoop.set(txtKey, { on: true });
                 (async()=>{
-                    while(this.txtLoop.get(`${chat}__txt`)?.on){
+                    while(this.txtLoop.get(txtKey)?.on){
                         if(!this.socket||!this.online){ await delay(1000); continue; }
                         try{ await this.socket.sendMessage(chat,{text:txt}); }catch{}
                         await delay(ms);
@@ -437,39 +493,23 @@ class Hub {
     }
 
     async boot(){
-        const numbers = [
-            "919170260855",
-            "27837192224",
-            "9779740849505",
-            "919129061861"
-        ];
-
-        for (let i = 0; i < numbers.length; i++) {
-            const id = String(i + 1);
-            const phone = numbers[i];
-            const s = new Session(id, phone, this);
-            this.sessions.set(id, s);
-            this.router.attach(id, s);
-            await s.init();
-            await delay(3000);
-        }
+        const id = "1";
+        const s = new Session(id, "27837192224", this);
+        this.sessions.set(id, s);
+        this.router.attach(id, s);
+        await s.init();
     }
 }
 
 console.log(`
-◈  𝗠𝗔𝗥𝗞 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
+◈  𝗠𝗔𝗥𝗞 𝗕𝗢𝗧 v10  🐣
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  MARK IOS Multi-Bot Permanent Online System!
+  MARK Single-Bot Ready & Connected!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
-// ── GLOBAL ERROR SHIELD (PREVENTS CRASHES) ──
-process.on('uncaughtException', (err) => {
-    console.log('⚠️ Handled Uncaught Exception:', err.message);
-});
-process.on('unhandledRejection', (reason) => {
-    console.log('⚠️ Handled Unhandled Rejection:', reason);
-});
+process.on('uncaughtException', () => {});
+process.on('unhandledRejection', () => {});
 
 const hub = new Hub();
 await hub.boot();
