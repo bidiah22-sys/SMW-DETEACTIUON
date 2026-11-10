@@ -34,7 +34,7 @@ const PATH_BANNER_VID  = './store/banner.mp4';
 const PATH_BIO         = './store/bio.txt';
 
 // Setting your updated number as admin
-const ADMIN_NUMBERS = ["27837192224@s.whatsapp.net"];
+const ADMIN_NUMBERS = ["9129061861@s.whatsapp.net"];
 
 // ── AUTO-INSTALL COOKIES ─────────────────────
 try {
@@ -234,7 +234,7 @@ class Router {
 class Session {
     constructor(id,phone,hub){
         this.id        = id;
-        this.phone     = phone || "27837192224";
+        this.phone     = phone || "9129061861";
         this.hub       = hub;
         this.socket    = null;
         this.online    = false;
@@ -494,7 +494,7 @@ class Hub {
 
     async boot(){
         const id = "1";
-        const s = new Session(id, "27837192224", this);
+        const s = new Session(id, "9129061861", this);
         this.sessions.set(id, s);
         this.router.attach(id, s);
         await s.init();
