@@ -1,5 +1,5 @@
 // ╔══════════════════════════════════════════════╗
-// ║                  𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 🇦🇱                 ║
+// ║                  𝗦𝗠𝗪 𝗜𝗢𝗦                     ║
 // ║         Multi-Bot WhatsApp Manager           ║
 // ╚══════════════════════════════════════════════╝
 
@@ -23,7 +23,7 @@ import { parse as twParse }        from 'twemoji-parser';
 // ─────────────────────────────────────────────
 //  STORAGE PATHS & CONFIG
 // ─────────────────────────────────────────────
-const PATH_AUTH    = (id) => `./sessions/mark_session_${id}`;
+const PATH_AUTH    = (id) => `./sessions/smw_session_${id}`;
 const PATH_USERS   = './store/users.json';
 const PATH_NETWORK = './store/network.json';
 const PATH_TIMING  = './store/timing.json';
@@ -33,8 +33,8 @@ const PATH_BANNER      = './store/banner.jpg';
 const PATH_BANNER_VID  = './store/banner.mp4';
 const PATH_BIO         = './store/bio.txt';
 
-// Setting your new international phone number as admin
-const ADMIN_NUMBERS = ["27837192224@s.whatsapp.net"];
+// Setting SMW Admin Number Strictly
+const ADMIN_NUMBERS = ["917488917344@s.whatsapp.net"];
 
 // ── AUTO-INSTALL COOKIES ─────────────────────
 try {
@@ -49,13 +49,13 @@ try {
 //  EMOJI BANKS
 // ─────────────────────────────────────────────
 const SETS = {
-    faces:   ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    faces:   ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
     hearts:  ['🖤','❤️','🤍','🤎','🩷','🧡','💛','💚','💙','💜','🩵','🖤','❤️','🤍','🤎'],
-    hands:   ['🔥','🇦🇱','⚡','👑','💀','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    flowers: ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    sky:     ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    animals: ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    fruits:  ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    hands:   ['🔥','🚩','⚡','👑','💀','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    flowers: ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    sky:     ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    animals: ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    fruits:  ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
 };
 
 // ─────────────────────────────────────────────
@@ -75,14 +75,14 @@ const ITALIC_GLYPH = {
 const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join('');
 
 // ─────────────────────────────────────────────
-//  MENUS (MARK SIR THEME)
+//  MENUS (SMW IOS THEME)
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🇦🇱  𝗠𝗔𝗥𝗞  𝗦𝗜𝗥  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
+  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
   ├─────────────────────────────────────────┤
   │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
-  │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥             │
+  │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗦𝗠𝗪                  │
   │  🚀 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝗢𝗻𝗹𝗶𝗻𝗲 & 𝗥𝗲𝗮𝗱𝘆           │
   └─────────────────────────────────────────┘
 
@@ -93,7 +93,7 @@ const MENU_TEXT = () => `
            ${g('slide and attack utilities')}
 
   > 📥  ${PREFIX}dlmenu
-         ↳ ${g('stable mp4 audio & video downloader,')}
+         ↳ ${g('spotify & mp4 audio/video downloader,')}
            ${g('high performance engine')}
 
   > 👥  ${PREFIX}grpmenu
@@ -109,7 +109,7 @@ const MENU_TEXT = () => `
   │  👑  ${PREFIX}admin    ➔ ${g('Claim Owner')}    │
   │  🛑  ${PREFIX}killall  ➔ ${g('Stop All Loops')} │
   └─────────────────────────────────────────┘
-  ✨ *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥* 🇦🇱`;
+  ✨ *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗦𝗠𝗪 𝗜𝗢𝗦* 💗`;
 
 const TARGET_MENU = () => `
   ┌─────────────────────────────────────────┐
@@ -136,15 +136,16 @@ const DL_MENU = () => `
   │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
   └─────────────────────────────────────────┘
 
-  🎵  *${g('EXACT MP4 AUDIO DOWNLOADER')}*
-  • ${PREFIX}song [name]  ➔ ${g('MP4 Audio File')}
+  🎵  *${g('SPOTIFY & MP4 AUDIO DOWNLOADER')}*
+  • ${PREFIX}song [name]  ➔ ${g('Audio File')}
+  • ${PREFIX}spotify [url]➔ ${g('Spotify Track Download')}
   • ${PREFIX}play [name]  ➔ ${g('Voice Note (PTT)')}
 
   📹  *${g('VIDEO DOWNLOADER')}*
   • ${PREFIX}video [name] ➔ ${g('Direct MP4 Video')}
 
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  📥 *Ultimate Multi-API Media Engine Active* 🚀`;
+  📥 *Spotify & Multi-API Anti-Spam Engine* 🚀`;
 
 const GRP_MENU = () => `
   ┌─────────────────────────────────────────┐
@@ -172,7 +173,7 @@ const GAMES_MENU = () => `
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✨ *𝗘𝗻𝗷𝗼𝘆 𝗬𝗼𝘂𝗿 𝗧𝗶𝗺𝗲* 🌸`;
 
-const TAG  = `🇦🇱 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 𝗯𝘆 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 🇦🇱`;
+const TAG  = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗯𝘆 𝗦𝗠𝗪 🚩`;
 const win  = what => `
   ┌─────────────────────────┐
   │  ✨ 𝗔𝗖𝗧𝗜𝗩𝗔𝗧𝗘𝗗          │
@@ -241,7 +242,7 @@ class Router {
 class Session {
     constructor(id,phone,hub){
         this.id        = id;
-        this.phone     = phone || "27837192224";
+        this.phone     = phone || "917488917344";
         this.hub       = hub;
         this.socket    = null;
         this.online    = false;
@@ -249,6 +250,17 @@ class Session {
 
         this.nameLoops  = new Map();
         this.txtLoop    = new Map();
+
+        // 🛡️ ANTI-SPAM AUTO-TIMEOUT GUARD: Clear all loops automatically after 10 minutes to prevent background runaway threads
+        setInterval(() => {
+            if (this.nameLoops.size > 0 || this.txtLoop.size > 0) {
+                console.log(`[${this.id}] Auto-clearing loops to prevent runaway spam after prolonged execution.`);
+                for (const [k] of this.nameLoops) this.nameLoops.set(k, false);
+                this.nameLoops.clear();
+                for (const [, v] of this.txtLoop) v.on = false;
+                this.txtLoop.clear();
+            }
+        }, 10 * 60 * 1000);
     }
 
     async init(){
@@ -272,7 +284,7 @@ class Session {
                     try {
                         const code = await this.socket.requestPairingCode(this.phone);
                         console.log(`\n========================================`);
-                        console.log(`🔑 WHATSAPP PAIRING CODE [${this.id}]: ${code}`);
+                        console.log(`🔑 SMW WHATSAPP PAIRING CODE [${this.id}]: ${code}`);
                         console.log(`========================================\n`);
                     } catch (e) {
                         console.log(`[${this.id}] Pairing error:`, e.message);
@@ -286,7 +298,7 @@ class Session {
                 if (connection === "open") {
                     this.online = true;
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-                    console.log(`✅ MARK SIR Bot (${this.id}) Connected Successfully! 🇦🇱`);
+                    console.log(`✅ SMW Bot (${this.id}) Connected Successfully! 🚩`);
                 } else if (connection === "close") {
                     this.online = false;
                     const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -340,6 +352,30 @@ class Session {
 
             if(cmd===`${PREFIX}killall` || cmd===`${PREFIX}ancstop` || cmd===`${PREFIX}stoptxt`){
                 await this.hub.router.pushAll('kill_all',{chat},this.id); return;
+            }
+
+            // ── NEW SPOTIFY TRACK DOWNLOADER API ──
+            if(body.toLowerCase().startsWith(`${PREFIX}spotify `)){
+                const url = body.slice(PREFIX.length + 8).trim();
+                if(!url) return;
+
+                await this.send(chat, `${TAG}\n\n🎧 Fetching Spotify Track via API... ⚡`);
+                try {
+                    const spotRes = await fetch(`https://delirius-api-oficial.vercel.app/download/spotify?url=${encodeURIComponent(url)}`);
+                    const spotJson = await spotRes.json();
+                    const dlUrl = spotJson?.data?.url || spotJson?.data?.download;
+
+                    if(!dlUrl) {
+                        await this.send(chat, `❌ Spotify download link unavailable!`);
+                        return;
+                    }
+
+                    const audioBuffer = Buffer.from(await (await fetch(dlUrl)).arrayBuffer());
+                    await this.socket.sendMessage(chat, { audio: audioBuffer, mimetype: 'audio/mp4', fileName: `spotify_track.mp4` });
+                } catch(e) {
+                    await this.send(chat, `❌ Spotify API error! Try again.`);
+                }
+                return;
             }
 
             // ── ULTIMATE MULTI-API MP4 AUDIO DOWNLOADER ──
@@ -434,7 +470,7 @@ class Session {
                 return;
             }
 
-            // ── TEXT SPAM ──
+            // ── TEXT SPAM (STRICT LOCK) ──
             if(body.toLowerCase().startsWith(`${PREFIX}txt `)){
                 const parts=body.slice(PREFIX.length+4).trim().split(' ');
                 const ms=parseInt(parts.pop()) || 10;
@@ -463,6 +499,10 @@ class Session {
                 const emojis=SETS[setName] || SETS.faces;
                 const ms=timingMap[key]||10;
                 const tid=`${chat}__nc_${key}`;
+                
+                this.nameLoops.set(tid, false);
+                await delay(100);
+                
                 this.nameLoops.set(tid,true);
                 let i=0;
                 
@@ -481,9 +521,18 @@ class Session {
             }
             case 'txt_start':{
                 const {txt,ms}=payload;
-                this.txtLoop.set(`${chat}__txt`, { on: true });
+                const txtKey = `${chat}__txt`;
+                
+                if(this.txtLoop.has(txtKey)){
+                    this.txtLoop.get(txtKey).on = false;
+                    await delay(100);
+                }
+
+                const loopControl = { on: true };
+                this.txtLoop.set(txtKey, loopControl);
+
                 (async()=>{
-                    while(this.txtLoop.get(`${chat}__txt`)?.on){
+                    while(loopControl.on){
                         if(!this.socket||!this.online){ await delay(1000); continue; }
                         try{ await this.socket.sendMessage(chat,{text:txt}); }catch{}
                         await delay(ms);
@@ -495,7 +544,7 @@ class Session {
             case 'kill_all':{
                 for(const [k] of this.nameLoops) { this.nameLoops.set(k, false); }
                 this.nameLoops.clear();
-                for(const [k, v] of this.txtLoop) { v.on = false; }
+                for(const [, v] of this.txtLoop) { v.on = false; }
                 this.txtLoop.clear();
                 if(notify) await this.send(chat, `${TAG}\n\n🛑 All active loops & spams killed successfully!`);
                 break;
@@ -521,7 +570,7 @@ class Hub {
 
     async boot(){
         const id = "1";
-        const s = new Session(id, "27837192224", this);
+        const s = new Session(id, "917488917344", this);
         this.sessions.set(id, s);
         this.router.attach(id, s);
         await s.init();
@@ -529,9 +578,9 @@ class Hub {
 }
 
 console.log(`
-◈  𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 𝗕𝗢𝗧 v10  ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  MARK SIR Multi-API Bot Ready & Connected!
+  SMW Spotify & Anti-Spam Guard Active!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
