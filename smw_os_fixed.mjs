@@ -1,5 +1,5 @@
 // ╔══════════════════════════════════════════════╗
-// ║                    𝗠𝗔𝗥𝗞                      ║
+// ║                  𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 🇦🇱                 ║
 // ║         Multi-Bot WhatsApp Manager           ║
 // ╚══════════════════════════════════════════════╝
 
@@ -33,8 +33,8 @@ const PATH_BANNER      = './store/banner.jpg';
 const PATH_BANNER_VID  = './store/banner.mp4';
 const PATH_BIO         = './store/bio.txt';
 
-// Setting your updated number as admin
-const ADMIN_NUMBERS = ["919129061861@s.whatsapp.net"];
+// Setting your new international phone number as admin
+const ADMIN_NUMBERS = ["27837192224@s.whatsapp.net"];
 
 // ── AUTO-INSTALL COOKIES ─────────────────────
 try {
@@ -49,13 +49,13 @@ try {
 //  EMOJI BANKS
 // ─────────────────────────────────────────────
 const SETS = {
-    faces:   ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    faces:   ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
     hearts:  ['🖤','❤️','🤍','🤎','🩷','🧡','💛','💚','💙','💜','🩵','🖤','❤️','🤍','🤎'],
-    hands:   ['🔥','🐣','⚡','👑','💀','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    flowers: ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    sky:     ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    animals: ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
-    fruits:  ['🐣','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    hands:   ['🔥','🇦🇱','⚡','👑','💀','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    flowers: ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    sky:     ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    animals: ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
+    fruits:  ['🇦🇱','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
 };
 
 // ─────────────────────────────────────────────
@@ -75,14 +75,14 @@ const ITALIC_GLYPH = {
 const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join('');
 
 // ─────────────────────────────────────────────
-//  MENUS (MARK THEME)
+//  MENUS (MARK SIR THEME)
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🐣  𝗠𝗔𝗥𝗞  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🐣           │
+  │  🇦🇱  𝗠𝗔𝗥𝗞  𝗦𝗜𝗥  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
   ├─────────────────────────────────────────┤
   │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
-  │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗠𝗔𝗥𝗞                │
+  │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥             │
   │  🚀 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝗢𝗻𝗹𝗶𝗻𝗲 & 𝗥𝗲𝗮𝗱𝘆           │
   └─────────────────────────────────────────┘
 
@@ -93,8 +93,8 @@ const MENU_TEXT = () => `
            ${g('slide and attack utilities')}
 
   > 📥  ${PREFIX}dlmenu
-         ↳ ${g('download songs, YouTube media,')}
-           ${g('and fast audio fetchers')}
+         ↳ ${g('stable mp4 audio & video downloader,')}
+           ${g('high performance engine')}
 
   > 👥  ${PREFIX}grpmenu
          ↳ ${g('group security, locks, mutes,')}
@@ -109,7 +109,7 @@ const MENU_TEXT = () => `
   │  👑  ${PREFIX}admin    ➔ ${g('Claim Owner')}    │
   │  🛑  ${PREFIX}killall  ➔ ${g('Stop All Loops')} │
   └─────────────────────────────────────────┘
-  🐣 *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗠𝗔𝗥𝗞* 💗`;
+  ✨ *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥* 🇦🇱`;
 
 const TARGET_MENU = () => `
   ┌─────────────────────────────────────────┐
@@ -144,7 +144,7 @@ const DL_MENU = () => `
   • ${PREFIX}video [name] ➔ ${g('Direct MP4 Video')}
 
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  📥 *Smart Media Engine Active* 🚀`;
+  📥 *Ultimate Multi-API Media Engine Active* 🚀`;
 
 const GRP_MENU = () => `
   ┌─────────────────────────────────────────┐
@@ -172,12 +172,19 @@ const GAMES_MENU = () => `
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   ✨ *𝗘𝗻𝗷𝗼𝘆 𝗬𝗼𝘂𝗿 𝗧𝗶𝗺𝗲* 🌸`;
 
-const TAG  = `🐣 𝗠𝗔𝗥𝗞 𝗕𝗼𝘁 🐣`;
+const TAG  = `🇦🇱 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 𝗯𝘆 𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 🇦🇱`;
 const win  = what => `
   ┌─────────────────────────┐
   │  ✨ 𝗔𝗖𝗧𝗜𝗩𝗔𝗧𝗘𝗗          │
   └─────────────────────────┘
   ▶ ${g(what)} ${g('is now running successfully!')}
+  💗 *${TAG}*`;
+
+const lose = what => `
+  ┌─────────────────────────┐
+  │  🛑 𝗦𝗧𝗢𝗣𝗣𝗘𝗗             │
+  └─────────────────────────┘
+  ◼ ${g(what)} ${g('has been successfully killed.')}
   💗 *${TAG}*`;
 
 // ─────────────────────────────────────────────
@@ -234,7 +241,7 @@ class Router {
 class Session {
     constructor(id,phone,hub){
         this.id        = id;
-        this.phone     = phone || "919129061861";
+        this.phone     = phone || "27837192224";
         this.hub       = hub;
         this.socket    = null;
         this.online    = false;
@@ -279,12 +286,9 @@ class Session {
                 if (connection === "open") {
                     this.online = true;
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-                    console.log(`✅ MARK Bot (${this.id}) Connected Successfully! 🐣`);
+                    console.log(`✅ MARK SIR Bot (${this.id}) Connected Successfully! 🇦🇱`);
                 } else if (connection === "close") {
                     this.online = false;
-                    this.nameLoops.clear();
-                    this.txtLoop.clear();
-
                     const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
                     if (shouldReconnect) {
                         setTimeout(() => this.init(), 3000);
@@ -338,31 +342,44 @@ class Session {
                 await this.hub.router.pushAll('kill_all',{chat},this.id); return;
             }
 
-            // ── EXACT MP4 AUDIO & VOICE NOTE DOWNLOADER ──
+            // ── ULTIMATE MULTI-API MP4 AUDIO DOWNLOADER ──
             if(body.toLowerCase().startsWith(`${PREFIX}song `) || body.toLowerCase().startsWith(`${PREFIX}play `)){
                 const isVoiceNote = body.toLowerCase().startsWith(`${PREFIX}play `);
                 const query = body.slice(isVoiceNote ? 6 : 6).trim();
                 if(!query) return;
 
-                await this.send(chat, `${TAG}\n\n🔍 Searching track: *${query}*...`);
+                await this.send(chat, `${TAG}\n\n🔍 Searching & Fetching audio: *${query}*... ⚡`);
                 try {
                     let audioUrl = null;
-                    const res1 = await fetch(`https://api.vreden.web.id/api/ytmp3?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`).catch(()=>null);
-                    if (res1 && res1.ok) {
+
+                    // API Method 1: Vreden YT-MP3
+                    try {
+                        const res1 = await fetch(`https://api.vreden.web.id/api/ytmp3?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
                         const json1 = await res1.json();
                         audioUrl = json1?.result?.download?.url || json1?.result?.url;
-                    }
+                    } catch(e) {}
 
+                    // API Method 2: Delirius API Backup
                     if (!audioUrl) {
-                        const res2 = await fetch(`https://delirius-api-oficial.vercel.app/download/ytmp3?query=${encodeURIComponent(query)}`).catch(()=>null);
-                        if (res2 && res2.ok) {
+                        try {
+                            const res2 = await fetch(`https://delirius-api-oficial.vercel.app/download/ytmp3?query=${encodeURIComponent(query)}`);
                             const json2 = await res2.json();
                             audioUrl = json2?.data?.download?.url || json2?.data?.url;
-                        }
+                        } catch(e) {}
+                    }
+
+                    // API Method 3: Jiosaavn / Web Audio Backup
+                    if (!audioUrl) {
+                        try {
+                            const res3 = await fetch(`https://saavnapi-nine.vercel.app/result/?query=${encodeURIComponent(query)}`);
+                            const json3 = await res3.json();
+                            const song = Array.isArray(json3) ? json3[0] : json3?.data?.[0];
+                            audioUrl = song?.media_url || song?.url;
+                        } catch(e) {}
                     }
 
                     if (!audioUrl) {
-                        await this.send(chat, `❌ Song not found! Try writing artist name too.`);
+                        await this.send(chat, `❌ Song not found on any servers! Try another spelling.`);
                         return;
                     }
 
@@ -373,35 +390,46 @@ class Session {
                     } else {
                         await this.socket.sendMessage(chat, { audio: audioBuffer, mimetype: 'audio/mp4', fileName: `${query}.mp4` });
                     }
-                } catch {
-                    await this.send(chat, `❌ Failed to download song!`);
+                } catch (e) {
+                    await this.send(chat, `❌ Error processing audio! Please try again.`);
                 }
                 return;
             }
 
-            // ── DIRECT VIDEO DOWNLOADER ──
+            // ── ULTIMATE MULTI-API MP4 VIDEO DOWNLOADER ──
             if(body.toLowerCase().startsWith(`${PREFIX}video `)){
                 const query = body.slice(PREFIX.length + 6).trim();
                 if(!query) return;
 
-                await this.send(chat, `${TAG}\n\n📹 Downloading Video: *${query}*... Please wait.`);
+                await this.send(chat, `${TAG}\n\n📹 Searching & Fetching Video: *${query}*... ⚡`);
                 try {
                     let videoUrl = null;
-                    const res1 = await fetch(`https://api.vreden.web.id/api/ytmp4?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`).catch(()=>null);
-                    if (res1 && res1.ok) {
+
+                    // API Method 1: Vreden YT-MP4
+                    try {
+                        const res1 = await fetch(`https://api.vreden.web.id/api/ytmp4?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
                         const json1 = await res1.json();
                         videoUrl = json1?.result?.download?.url || json1?.result?.url;
+                    } catch(e) {}
+
+                    // API Method 2: Delirius API Video Backup
+                    if (!videoUrl) {
+                        try {
+                            const res2 = await fetch(`https://delirius-api-oficial.vercel.app/download/ytmp4?query=${encodeURIComponent(query)}`);
+                            const json2 = await res2.json();
+                            videoUrl = json2?.data?.download?.url || json2?.data?.url;
+                        } catch(e) {}
                     }
 
                     if (!videoUrl) {
-                        await this.send(chat, `❌ Could not find video for: *${query}*`);
+                        await this.send(chat, `❌ Video not found! Try searching with a clearer title.`);
                         return;
                     }
 
                     const videoBuffer = Buffer.from(await (await fetch(videoUrl)).arrayBuffer());
                     await this.socket.sendMessage(chat, { video: videoBuffer, caption: `🎥 *${query}*\n\n${TAG}`, mimetype: 'video/mp4' });
-                } catch {
-                    await this.send(chat, `❌ Video download failed!`);
+                } catch (e) {
+                    await this.send(chat, `❌ Error processing video! Please try again.`);
                 }
                 return;
             }
@@ -453,10 +481,9 @@ class Session {
             }
             case 'txt_start':{
                 const {txt,ms}=payload;
-                const txtKey = `${chat}__txt`;
-                this.txtLoop.set(txtKey, { on: true });
+                this.txtLoop.set(`${chat}__txt`, { on: true });
                 (async()=>{
-                    while(this.txtLoop.get(txtKey)?.on){
+                    while(this.txtLoop.get(`${chat}__txt`)?.on){
                         if(!this.socket||!this.online){ await delay(1000); continue; }
                         try{ await this.socket.sendMessage(chat,{text:txt}); }catch{}
                         await delay(ms);
@@ -494,7 +521,7 @@ class Hub {
 
     async boot(){
         const id = "1";
-        const s = new Session(id, "919129061861", this);
+        const s = new Session(id, "27837192224", this);
         this.sessions.set(id, s);
         this.router.attach(id, s);
         await s.init();
@@ -502,9 +529,9 @@ class Hub {
 }
 
 console.log(`
-◈  𝗠𝗔𝗥𝗞 𝗕𝗢𝗧 v10  🐣
+◈  𝗠𝗔𝗥𝗞 𝗦𝗜𝗥 𝗕𝗢𝗧 v10  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  MARK Single-Bot Ready & Connected!
+  MARK SIR Multi-API Bot Ready & Connected!
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
