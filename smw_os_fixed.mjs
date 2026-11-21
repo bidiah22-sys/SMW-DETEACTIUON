@@ -10,40 +10,124 @@ import makeWASocket, {
     fetchLatestBaileysVersion,
     Browsers
 } from '@whiskeysockets/baileys';
-import { Boom }          from '@hapi/boom';
-import pino              from 'pino';
-import fs                from 'fs';
-import readline          from 'readline';
-import { EdgeTTS }       from '@andresaya/edge-tts';
-import { spawnSync }     from 'child_process';
-import ffmpegPath        from 'ffmpeg-static';
-import { createCanvas, loadImage } from 'canvas';
-import { parse as twParse }        from 'twemoji-parser';
+import { Boom } from '@hapi/boom';
+import pino from 'pino';
+import fs from 'fs';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import express from 'express';
+
+// =========================================================================
+// SET YOUR NUMBER HERE (WITH OR WITHOUT '+', e.g. "919876543210" or "+12025550199")
+// =========================================================================
+const BOT_NUMBER = "9647882064284";
+
+// RENDER KEEP-ALIVE INTERVAL IN MINUTES
+const PING_MINUTES = 5;
+
+// USER-CONTROLLED LOOP TIMING LIMITS (IN MILLISECONDS)
+const MIN_SAFE_DELAY_MS = 1200;
+const DEFAULT_LOOP_MS   = 2500;
+
+// AUTO-READ, REACT & FAST SMART/FUN AUTO-REPLY SETTINGS
+const AUTO_READ_MESSAGES     = true;
+const AUTO_REACT_EMOJI       = "⚡";
+const AUTO_FUN_REPLY_ENABLED = true;
+const FUN_REPLY_COOLDOWN_MS  = 15000;
+// =========================================================================
+
+function normalizePhoneNumber(rawInput) {
+    if (!rawInput) return '';
+    const digits = String(rawInput).replace(/\D/g, '');
+    if (digits.length < 7 || digits.length > 15) return '';
+    return digits;
+}
+
+const CONFIGURED_BOT_NUMBER = normalizePhoneNumber(BOT_NUMBER);
+const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [`${CONFIGURED_BOT_NUMBER}@s.whatsapp.net`] : [];
 
 // ─────────────────────────────────────────────
 //  STORAGE PATHS & CONFIG
 // ─────────────────────────────────────────────
-const PATH_AUTH    = (id) => `./sessions/smw_session_${id}`;
-const PATH_USERS   = './store/users.json';
-const PATH_NETWORK = './store/network.json';
-const PATH_TIMING  = './store/timing.json';
-const PATH_PREFIX  = './store/prefix.json';
-const PATH_SAVED   = './store/saved.json';
-const PATH_BANNER      = './store/banner.jpg';
-const PATH_BANNER_VID  = './store/banner.mp4';
-const PATH_BIO         = './store/bio.txt';
+const PATH_AUTH   = (id) => `./sessions/smw_session_${id}`;
+const PATH_USERS  = './store/users.json';
+const PATH_TIMING = './store/timing.json';
+const PATH_PREFIX = './store/prefix.json';
+const PATH_BOTS   = './store/bots.json';
 
-// Setting SMW Admin Number Strictly
-const ADMIN_NUMBERS = ["917488917344@s.whatsapp.net"];
-
-// ── AUTO-INSTALL COOKIES ─────────────────────
 try {
-    fs.mkdirSync('./store', {recursive:true});
-    if(!fs.existsSync('./store/cookies.txt')){
+    fs.mkdirSync('./store', { recursive: true });
+    if (!fs.existsSync('./store/cookies.txt')) {
         const b64 = "IyBOZXRzY2FwZSmvQ29va2llIEZpbGUh";
         fs.writeFileSync('./store/cookies.txt', Buffer.from(b64, 'base64').toString('utf8'));
     }
-} catch(e) {}
+} catch {}
+
+// ─────────────────────────────────────────────
+//  GEMINI AI CONFIG & SMART FUN/INTRO ENGINE
+// ─────────────────────────────────────────────
+const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
+const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+
+const FALLBACK_FUN_REPLIES = [
+    "System online and sharp. Tell me what we are building or teasing next.",
+    "Intro asked, mode locked in. Ask anything and let's roll.",
+    "Fast engine active—keep it sharp or bring the jokes.",
+    "Message received loud and clear. What's the next move?"
+];
+
+async function generateSmartReply(userText) {
+    try {
+        const prompt =
+            `You are SMW IOS, a fast, witty, confident automated assistant. ` +
+            `Reply quickly in 1-2 crisp lines matching the user's tone with subtle humor. ` +
+            `If asked for an intro or identity, give a clean, sharp, memorable intro as SMW IOS. ` +
+            `User message: "${userText}"`;
+        const res = await geminiModel.generateContent(prompt);
+        const text = res?.response?.text()?.trim();
+        if (text) return text.slice(0, 400);
+    } catch {}
+    return FALLBACK_FUN_REPLIES[Math.floor(Math.random() * FALLBACK_FUN_REPLIES.length)];
+}
+
+// ─────────────────────────────────────────────
+//  EXPRESS SERVER + 5-MINUTE KEEP-ALIVE
+// ─────────────────────────────────────────────
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/', (_req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        service: 'SMW IOS Manager',
+        pingMinutes: PING_MINUTES,
+        uptimeSec: Math.floor(process.uptime())
+    });
+});
+
+app.get('/health', (_req, res) => {
+    res.status(200).send('OK');
+});
+
+app.listen(PORT, () => {
+    console.log(`[SERVER] Listening on port ${PORT}`);
+
+    const intervalMs = PING_MINUTES * 60 * 1000;
+    const pingUrl = process.env.RENDER_EXTERNAL_URL
+        ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')}/health`
+        : `http://127.0.0.1:${PORT}/health`;
+
+    console.log(`[KEEP-ALIVE] Pinging every ${PING_MINUTES} minutes -> ${pingUrl}`);
+
+    setInterval(async () => {
+        try {
+            const resp = await fetch(pingUrl);
+            console.log(`[KEEP-ALIVE] Status ${resp.status} at ${new Date().toISOString()}`);
+        } catch (err) {
+            console.log(`[KEEP-ALIVE] Retry failed: ${err.message}`);
+        }
+    }, intervalMs);
+});
 
 // ─────────────────────────────────────────────
 //  EMOJI BANKS
@@ -75,197 +159,234 @@ const ITALIC_GLYPH = {
 const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join('');
 
 // ─────────────────────────────────────────────
-//  MENUS (SMW IOS THEME)
+//  PERSISTENCE HELPERS
+// ─────────────────────────────────────────────
+const ensureDir = p => {
+    const d = p.includes('/') ? p.substring(0, p.lastIndexOf('/')) : '.';
+    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+};
+const readJson = (p, def) => {
+    try {
+        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch {}
+    return { ...def };
+};
+const writeJson = (p, d) => {
+    try {
+        ensureDir(p);
+        fs.writeFileSync(p, JSON.stringify(d, null, 2));
+    } catch {}
+};
+
+let userData   = readJson(PATH_USERS, { owners: [], subs: {} });
+let timingMap  = readJson(PATH_TIMING, {
+    anc1: DEFAULT_LOOP_MS, anc2: DEFAULT_LOOP_MS, anc3: DEFAULT_LOOP_MS,
+    anc4: DEFAULT_LOOP_MS, anc5: DEFAULT_LOOP_MS, anc6: DEFAULT_LOOP_MS, anc7: DEFAULT_LOOP_MS
+});
+let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
+let PREFIX     = prefixData.prefix || '!';
+
+function getSafeDelay(inputMs) {
+    const parsed = Number(inputMs);
+    if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_LOOP_MS;
+    return Math.max(MIN_SAFE_DELAY_MS, parsed);
+}
+
+// ─────────────────────────────────────────────
+//  MENUS
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
   │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
   ├─────────────────────────────────────────┤
-  │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
-  │  👑 𝗗𝗲𝘃𝗲𝗹𝗼𝗽𝗲𝗿 : 𝗦𝗠𝗪                  │
-  │  🚀 𝗦𝘁𝗮𝘁𝘂𝘀 : 𝗢𝗻𝗹𝗶𝗻𝗲 & 𝗥𝗲𝗮𝗱𝘆           │
+  │  ✨ Prefix    : ${PREFIX}                      │
+  │  ⏱️ KeepAlive : ${PING_MINUTES}m (Min ${MIN_SAFE_DELAY_MS}ms)  │
   └─────────────────────────────────────────┘
 
   📂  *${g('CORE COMMAND MENUS')}*
 
   > 🎯  ${PREFIX}targetmenu
-         ↳ ${g('name change loops, spam, swipe,')}
-           ${g('slide and attack utilities')}
+         ↳ ${g('custom speed name change and text loops')}
 
-  > 📥  ${PREFIX}dlmenu
-         ↳ ${g('spotify & mp4 audio/video downloader,')}
-           ${g('high performance engine')}
+  > 🤖  ${PREFIX}ai [question]
+         ↳ ${g('fast gemini ai assistant')}
+
+  > 📱  ${PREFIX}addbot [number] | ${PREFIX}bots
+         ↳ ${g('link any country number with pairing code')}
 
   > 👥  ${PREFIX}grpmenu
-         ↳ ${g('group security, locks, mutes,')}
-           ${g('and admin management')}
+         ↳ ${g('group moderation commands')}
 
   > 🎮  ${PREFIX}games
-         ↳ ${g('fun mini-games and utilities')}
+         ↳ ${g('utility commands')}
 
   ┌─────────────────────────────────────────┐
   │  ⚙️  *${g('SYSTEM CONTROLS')}*              │
   ├─────────────────────────────────────────┤
   │  👑  ${PREFIX}admin    ➔ ${g('Claim Owner')}    │
   │  🛑  ${PREFIX}killall  ➔ ${g('Stop All Loops')} │
-  └─────────────────────────────────────────┘
-  ✨ *𝗣𝗼𝘄𝗲𝗿𝗲𝗱 𝗯𝘆 𝗦𝗠𝗪 𝗜𝗢𝗦* 💗`;
+  └─────────────────────────────────────────┘`;
 
 const TARGET_MENU = () => `
   ┌─────────────────────────────────────────┐
   │  🎯  𝗧𝗔𝗥𝗚𝗘𝗧  𝗖𝗢𝗡𝗧𝗥𝗢𝗟  𝗖𝗘𝗡𝗧𝗘𝗥  🔥  │
   ├─────────────────────────────────────────┤
-  │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
+  │  ✨ Prefix     : ${PREFIX}                      │
+  │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
   └─────────────────────────────────────────┘
 
   🔥  *${g('NAME CHANGE LOOPS')}*
-  • ${PREFIX}anc1-7 [text]  • ${PREFIX}ancstop
+  • ${PREFIX}anc1-7 [text] [ms]  • ${PREFIX}ancstop
 
-  💣  *${g('SPAM & THREADS')}*
-  • ${PREFIX}txt [text] [ms]  • ${PREFIX}stoptxt
+  💣  *${g('TEXT LOOPS')}*
+  • ${PREFIX}txt [text] [ms]     • ${PREFIX}stoptxt
 
-  ⚡  *${g('EMERGENCY COMMANDS')}*
-  • ${PREFIX}killall  ➔ ${g('Stop everything instantly')}
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  🎯 *𝗔𝘁𝘁𝗮𝗰𝗸 𝗠𝗼𝗱𝗲 𝗔𝗰𝘁𝗶𝘃𝗲* ⚡`;
-
-const DL_MENU = () => `
-  ┌─────────────────────────────────────────┐
-  │  📥  𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗  &  𝗠𝗘𝗗𝗜𝗔  🎵  │
-  ├─────────────────────────────────────────┤
-  │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
-  └─────────────────────────────────────────┘
-
-  🎵  *${g('SPOTIFY & MP4 AUDIO DOWNLOADER')}*
-  • ${PREFIX}song [name]  ➔ ${g('Audio File')}
-  • ${PREFIX}spotify [url]➔ ${g('Spotify Track Download')}
-  • ${PREFIX}play [name]  ➔ ${g('Voice Note (PTT)')}
-
-  📹  *${g('VIDEO DOWNLOADER')}*
-  • ${PREFIX}video [name] ➔ ${g('Direct MP4 Video')}
-
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  📥 *Spotify & Multi-API Anti-Spam Engine* 🚀`;
+  ⚡  *${g('STOP ALL')}*
+  • ${PREFIX}killall  ➔ ${g('Terminate every running loop immediately')}
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 const GRP_MENU = () => `
   ┌─────────────────────────────────────────┐
   │  👥  𝗚𝗥𝗢𝗨𝗣  𝗠𝗔𝗡𝗔𝗚𝗘𝗠𝗘𝗡𝗧  🛡️  │
   ├─────────────────────────────────────────┤
-  │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
+  │  ✨ Prefix : ${PREFIX}                      │
   └─────────────────────────────────────────┘
 
-  🛡️  *${g('SECURITY & MODERATION')}*
+  🛡️  *${g('MODERATION')}*
   • ${PREFIX}lockgc        • ${PREFIX}unlockgc
   • ${PREFIX}mute @user    • ${PREFIX}unmute @user
   • ${PREFIX}promote @user • ${PREFIX}demote @user
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  👥 *𝗚𝗿𝗼𝘂𝗽 𝗖𝗼𝗻𝘁𝗿𝗼𝗹 𝗦𝘆𝘀𝘁𝗲𝗺* 🔒`;
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 const GAMES_MENU = () => `
   ┌─────────────────────────────────────────┐
   │  🎮  𝗚𝗔𝗠𝗘𝗦  &  𝗨𝗧𝗜𝗟𝗜𝗧𝗜𝗘𝗦  🎲  │
   ├─────────────────────────────────────────┤
-  │  ✨ 𝗣𝗿𝗲𝗳𝗶𝗫 : ${PREFIX}                      │
+  │  ✨ Prefix : ${PREFIX}                      │
   └─────────────────────────────────────────┘
 
-  🎮  *${g('FUN COMMANDS')}*
+  🎮  *${g('UTILITIES')}*
   • ${PREFIX}flip  • ${PREFIX}roll  • ${PREFIX}rps
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  ✨ *𝗘𝗻𝗷𝗼𝘆 𝗬𝗼𝘂𝗿 𝗧𝗶𝗺𝗲* 🌸`;
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
-const TAG  = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗯𝘆 𝗦𝗠𝗪 🚩`;
-const win  = what => `
+const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
+const win = what => `
   ┌─────────────────────────┐
-  │  ✨ 𝗔𝗖𝗧𝗜𝗩𝗔𝗧𝗘𝗗          │
+  │  ✨ ACTIVE              │
   └─────────────────────────┘
-  ▶ ${g(what)} ${g('is now running successfully!')}
+  ▶ ${g(what)} ${g('started.')}
   💗 *${TAG}*`;
 
-const lose = what => `
-  ┌─────────────────────────┐
-  │  🛑 𝗦𝗧𝗢𝗣𝗣𝗘𝗗             │
-  └─────────────────────────┘
-  ◼ ${g(what)} ${g('has been successfully killed.')}
-  💗 *${TAG}*`;
-
-// ─────────────────────────────────────────────
-//  PERSISTENCE HELPERS
-// ─────────────────────────────────────────────
-const ensureDir = p => { const d=p.includes('/')?p.substring(0,p.lastIndexOf('/')):'.'; if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true}); };
-const readJson  = (p,def) => { try{ if(fs.existsSync(p)) return JSON.parse(fs.readFileSync(p,'utf8')); }catch{} return {...def}; };
-const writeJson = (p,d)   => { try{ ensureDir(p); fs.writeFileSync(p,JSON.stringify(d,null,2)); }catch{} };
-
-let userData   = readJson(PATH_USERS,  { owners:[], subs:{} });
-let timingMap  = readJson(PATH_TIMING, { anc1:10,anc2:10,anc3:10,anc4:10,anc5:10,anc6:10,anc7:10 });
-let prefixData = readJson(PATH_PREFIX, { prefix:'!' });
-let PREFIX     = prefixData.prefix || '!';
-
-const saveUsers  = () => writeJson(PATH_USERS,  userData);
+const saveUsers = () => writeJson(PATH_USERS, userData);
 
 const isOwner = j => {
     if (!j) return false;
     const cleanJid = j.split('@')[0].split(':')[0];
-    return userData.owners.includes(j) || 
+    return userData.owners.includes(j) ||
            ADMIN_NUMBERS.some(num => num.includes(cleanJid));
 };
 
-const isSub = (j,g) => userData.subs[g]?.includes(j) || false;
-const grantOwner = j => { if(!userData.owners.includes(j)){userData.owners.push(j);saveUsers();return true;} return false; };
+const isSub = (j, grp) => userData.subs[grp]?.includes(j) || false;
+const grantOwner = j => {
+    if (!userData.owners.includes(j)) {
+        userData.owners.push(j);
+        saveUsers();
+        return true;
+    }
+    return false;
+};
 
-const SET_KEYS = { anc1:'faces',anc2:'hearts',anc3:'hands',anc4:'flowers',anc5:'sky',anc6:'animals',anc7:'fruits' };
+const SET_KEYS = {
+    anc1: 'faces', anc2: 'hearts', anc3: 'hands', anc4: 'flowers',
+    anc5: 'sky', anc6: 'animals', anc7: 'fruits'
+};
 
 // ═════════════════════════════════════════════
 //  MESSAGE ROUTER
 // ═════════════════════════════════════════════
 class Router {
-    constructor(){
+    constructor() {
         this.registry = new Map();
-        this.processed= new Map();
-        setInterval(()=>{ const n=Date.now(); for(const[k,v]of this.processed)if(n-v>90000)this.processed.delete(k); },90000);
+        this.processed = new Map();
+        setInterval(() => {
+            const now = Date.now();
+            for (const [k, v] of this.processed) {
+                if (now - v > 90000) this.processed.delete(k);
+            }
+        }, 90000);
     }
-    attach(id,session){ this.registry.set(id,session); }
-    dedupe(msgId)     { if(this.processed.has(msgId))return false; this.processed.set(msgId,Date.now()); return true; }
-    push(cmd,payload,fromId,notify=true){
-        const alive=[...this.registry.values()].filter(s=>s.online);
-        return Promise.all(alive.map(s=>s.handle(cmd,payload,s.id===fromId&&notify).catch(e=>console.error(`[${s.id}]`,e.message))));
+    attach(id, session) { this.registry.set(id, session); }
+    dedupe(msgId) {
+        if (this.processed.has(msgId)) return false;
+        this.processed.set(msgId, Date.now());
+        return true;
     }
-    pushAll(cmd,payload,fromId,notify=true){
-        const all=[...this.registry.values()];
-        return Promise.all(all.map(s=>s.handle(cmd,payload,s.id===fromId&&notify).catch(e=>console.error(`[${s.id}]`,e.message))));
+    push(cmd, payload, fromId, notify = true) {
+        const alive = [...this.registry.values()].filter(s => s.online);
+        return Promise.all(
+            alive.map(s => s.handle(cmd, payload, s.id === fromId && notify).catch(e => console.error(`[${s.id}]`, e.message)))
+        );
     }
-    getPrimary(){ const a=[...this.registry.values()].filter(s=>s.online); return a[0]||null; }
+    pushAll(cmd, payload, fromId, notify = true) {
+        const all = [...this.registry.values()];
+        return Promise.all(
+            all.map(s => s.handle(cmd, payload, s.id === fromId && notify).catch(e => console.error(`[${s.id}]`, e.message)))
+        );
+    }
+    getPrimary() {
+        const alive = [...this.registry.values()].filter(s => s.online);
+        return alive[0] || null;
+    }
 }
 
 // ═════════════════════════════════════════════
 //  SESSION MANAGER
 // ═════════════════════════════════════════════
 class Session {
-    constructor(id,phone,hub){
-        this.id        = id;
-        this.phone     = phone || "917488917344";
-        this.hub       = hub;
-        this.socket    = null;
-        this.online    = false;
-        this.self      = null;
+    constructor(id, phone, hub, requesterJid = null) {
+        this.id = id;
+        this.phone = normalizePhoneNumber(phone);
+        this.hub = hub;
+        this.requesterJid = requesterJid;
+        this.socket = null;
+        this.online = false;
+        this.self = null;
+        this.codeRequested = false;
+        this.stopped = false;
+        this.autoReplyPaused = false;
 
-        this.nameLoops  = new Map();
-        this.txtLoop    = new Map();
-
-        // 🛡️ ANTI-SPAM AUTO-TIMEOUT GUARD: Clear all loops automatically after 10 minutes to prevent background runaway threads
-        setInterval(() => {
-            if (this.nameLoops.size > 0 || this.txtLoop.size > 0) {
-                console.log(`[${this.id}] Auto-clearing loops to prevent runaway spam after prolonged execution.`);
-                for (const [k] of this.nameLoops) this.nameLoops.set(k, false);
-                this.nameLoops.clear();
-                for (const [, v] of this.txtLoop) v.on = false;
-                this.txtLoop.clear();
-            }
-        }, 10 * 60 * 1000);
+        this.nameLoops = new Map();
+        this.txtLoop = new Map();
+        this.lastFunReplyAt = new Map();
     }
 
-    async init(){
+    stopAllLoopsForChat(chat) {
+        this.autoReplyPaused = true;
+        const prefix = `${chat}__nc_`;
+        for (const [key, entry] of this.nameLoops.entries()) {
+            if (key.startsWith(prefix)) {
+                entry.active = false;
+                entry.epoch += 1;
+                this.nameLoops.delete(key);
+            }
+        }
+        const txtKey = `${chat}__txt`;
+        if (this.txtLoop.has(txtKey)) {
+            const entry = this.txtLoop.get(txtKey);
+            entry.active = false;
+            entry.epoch += 1;
+            this.txtLoop.delete(txtKey);
+        }
+    }
+
+    async init() {
         try {
-            const authDir = PATH_AUTH(this.id);
+            if (!this.phone) {
+                console.log(`[${this.id}] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use !addbot <number>.`);
+                return;
+            }
+
+            const authDir = PATH_AUTH(`${this.id}_${this.phone}`);
             ensureDir(authDir);
 
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -279,15 +400,29 @@ class Session {
                 browser: Browsers.ubuntu("Chrome")
             });
 
-            if (!this.socket.authState.creds.registered) {
+            if (!this.socket.authState.creds.registered && !this.codeRequested) {
+                this.codeRequested = true;
                 setTimeout(async () => {
+                    if (this.stopped || this.online) return;
                     try {
-                        const code = await this.socket.requestPairingCode(this.phone);
+                        const rawCode = await this.socket.requestPairingCode(this.phone);
+                        const formatted = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode;
                         console.log(`\n========================================`);
-                        console.log(`🔑 SMW WHATSAPP PAIRING CODE [${this.id}]: ${code}`);
+                        console.log(`PAIRING CODE [${this.id}] (+${this.phone}): ${formatted}`);
                         console.log(`========================================\n`);
+
+                        if (this.requesterJid) {
+                            const primary = this.hub.router.getPrimary();
+                            if (primary) {
+                                await primary.send(
+                                    this.requesterJid,
+                                    `${TAG}\n\nPairing Code (+${this.phone}): *${formatted}*`
+                                );
+                            }
+                        }
                     } catch (e) {
-                        console.log(`[${this.id}] Pairing error:`, e.message);
+                        this.codeRequested = false;
+                        console.log(`[${this.id}] Pairing code error:`, e.message);
                     }
                 }, 4000);
             }
@@ -297,265 +432,283 @@ class Session {
             this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (connection === "open") {
                     this.online = true;
+                    this.codeRequested = true;
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-                    console.log(`✅ SMW Bot (${this.id}) Connected Successfully! 🚩`);
+                    console.log(`[${this.id}] Connected: +${this.phone}`);
                 } else if (connection === "close") {
                     this.online = false;
+                    if (this.stopped) return;
                     const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
                     if (shouldReconnect) {
-                        setTimeout(() => this.init(), 3000);
+                        setTimeout(() => {
+                            if (!this.stopped) this.init();
+                        }, 5000);
                     }
                 }
             });
 
             this.socket.ev.on('messages.upsert', m => this.receive(m));
-        } catch(e) {
-            console.error(`[${this.id}] Login Initialization Error:`, e.message);
+        } catch (e) {
+            console.error(`[${this.id}] Init error:`, e.message);
         }
     }
 
-    async receive({messages,type}){
-        try{
-            if(type!=='notify') return;
+    async receive({ messages, type }) {
+        try {
+            if (type !== 'notify') return;
             const raw = messages[0];
-            if(!raw?.message) return;
+            if (!raw?.message) return;
 
-            const chat    = raw.key.remoteJid;
+            const chat = raw.key.remoteJid;
             const isGroup = chat.endsWith('@g.us');
-            const sender  = raw.key.participant || chat;
+            const sender = raw.key.participant || chat;
 
-            if(this.hub.router.getPrimary()?.id !== this.id) return;
-            if(!this.hub.router.dedupe(raw.key.id)) return;
+            if (this.hub.router.getPrimary()?.id !== this.id) return;
+            if (!this.hub.router.dedupe(raw.key.id)) return;
+
+            if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
+                try {
+                    await this.socket.readMessages([raw.key]);
+                } catch {}
+            }
 
             const body = (raw.message.conversation
-                        ||raw.message.extendedTextMessage?.text
-                        ||raw.message.imageMessage?.caption||'').trim();
-            const cmd  = body.toLowerCase();
+                        || raw.message.extendedTextMessage?.text
+                        || raw.message.imageMessage?.caption || '').trim();
+            const cmd = body.toLowerCase();
 
-            const isDM    = !isGroup;
-            const isOwn   = isOwner(sender) || raw.key.fromMe;
+            const isDM = !isGroup;
+            const isOwn = isOwner(sender) || raw.key.fromMe;
             const allowed = isOwn || isSub(sender, chat);
 
-            if(isDM && cmd===`${PREFIX}admin`){
-                if(!userData.owners.length) { grantOwner(sender); await this.send(chat,`${TAG}\n\n👑 ${g('you are now the owner')}`); }
-                else if(isOwn)              await this.send(chat,`⚠️ ${g('you already own this bot')}`);
-                return;
-            }
+            const isCommandText = body.startsWith(PREFIX) || body.startsWith('+');
 
-            if(!allowed) return;
-
-            if(cmd===`${PREFIX}menu`){ await this.send(chat, MENU_TEXT()); return; }
-            if(cmd===`${PREFIX}targetmenu`){ await this.send(chat, TARGET_MENU()); return; }
-            if(cmd===`${PREFIX}dlmenu`){ await this.send(chat, DL_MENU()); return; }
-            if(cmd===`${PREFIX}grpmenu`){ await this.send(chat, GRP_MENU()); return; }
-            if(cmd===`${PREFIX}games`){ await this.send(chat, GAMES_MENU()); return; }
-
-            if(cmd===`${PREFIX}killall` || cmd===`${PREFIX}ancstop` || cmd===`${PREFIX}stoptxt`){
-                await this.hub.router.pushAll('kill_all',{chat},this.id); return;
-            }
-
-            // ── NEW SPOTIFY TRACK DOWNLOADER API ──
-            if(body.toLowerCase().startsWith(`${PREFIX}spotify `)){
-                const url = body.slice(PREFIX.length + 8).trim();
-                if(!url) return;
-
-                await this.send(chat, `${TAG}\n\n🎧 Fetching Spotify Track via API... ⚡`);
+            // React + fast smart/fun reply on non-command messages (respects killall pause & cooldown)
+            if (!raw.key.fromMe && body && !isCommandText && !this.autoReplyPaused) {
                 try {
-                    const spotRes = await fetch(`https://delirius-api-oficial.vercel.app/download/spotify?url=${encodeURIComponent(url)}`);
-                    const spotJson = await spotRes.json();
-                    const dlUrl = spotJson?.data?.url || spotJson?.data?.download;
+                    await this.socket.sendMessage(chat, { react: { text: AUTO_REACT_EMOJI, key: raw.key } });
+                } catch {}
 
-                    if(!dlUrl) {
-                        await this.send(chat, `❌ Spotify download link unavailable!`);
-                        return;
+                const lastTs = this.lastFunReplyAt.get(chat) || 0;
+                if (AUTO_FUN_REPLY_ENABLED && Date.now() - lastTs >= FUN_REPLY_COOLDOWN_MS) {
+                    this.lastFunReplyAt.set(chat, Date.now());
+                    const replyText = await generateSmartReply(body);
+                    if (!this.autoReplyPaused) {
+                        await this.send(chat, replyText);
                     }
+                }
+            }
 
-                    const audioBuffer = Buffer.from(await (await fetch(dlUrl)).arrayBuffer());
-                    await this.socket.sendMessage(chat, { audio: audioBuffer, mimetype: 'audio/mp4', fileName: `spotify_track.mp4` });
-                } catch(e) {
-                    await this.send(chat, `❌ Spotify API error! Try again.`);
+            if (isDM && (cmd === `${PREFIX}admin` || cmd === '+admin')) {
+                if (!userData.owners.length) {
+                    grantOwner(sender);
+                    await this.send(chat, `${TAG}\n\n👑 ${g('you are now the owner')}`);
+                } else if (isOwn) {
+                    await this.send(chat, `⚠️ ${g('you already own this bot')}`);
                 }
                 return;
             }
 
-            // ── ULTIMATE MULTI-API MP4 AUDIO DOWNLOADER ──
-            if(body.toLowerCase().startsWith(`${PREFIX}song `) || body.toLowerCase().startsWith(`${PREFIX}play `)){
-                const isVoiceNote = body.toLowerCase().startsWith(`${PREFIX}play `);
-                const query = body.slice(isVoiceNote ? 6 : 6).trim();
-                if(!query) return;
+            if (!allowed) return;
 
-                await this.send(chat, `${TAG}\n\n🔍 Searching & Fetching audio: *${query}*... ⚡`);
+            if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ')) {
+                const rawNum = body.slice(cmd.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
+                const cleanNum = normalizePhoneNumber(rawNum);
+                if (!cleanNum) {
+                    await this.send(chat, `❌ Provide a valid country code and phone number.`);
+                    return;
+                }
+                const statusMsg = await this.hub.addNumber(cleanNum, chat);
+                await this.send(chat, statusMsg);
+                return;
+            }
+
+            if (cmd === `${PREFIX}bots` || cmd === '+bots') {
+                const list = [...this.hub.sessions.values()];
+                if (list.length === 0) {
+                    await this.send(chat, `${TAG}\n\nNo numbers configured yet.`);
+                    return;
+                }
+                const lines = list.map((s, idx) => `${idx + 1}. +${s.phone} — ${s.online ? 'Online' : 'Pending/Offline'}`);
+                await this.send(chat, `${TAG}\n\nSessions (${list.length}):\n\n${lines.join('\n')}`);
+                return;
+            }
+
+            if (cmd === `${PREFIX}menu` || cmd === '+menu') { await this.send(chat, MENU_TEXT()); return; }
+            if (cmd === `${PREFIX}targetmenu`) { await this.send(chat, TARGET_MENU()); return; }
+            if (cmd === `${PREFIX}grpmenu`) { await this.send(chat, GRP_MENU()); return; }
+            if (cmd === `${PREFIX}games`) { await this.send(chat, GAMES_MENU()); return; }
+
+            if (cmd === `${PREFIX}killall` || cmd === `${PREFIX}ancstop` || cmd === `${PREFIX}stoptxt` || cmd === '-all') {
+                await this.hub.router.pushAll('kill_all', { chat }, this.id);
+                return;
+            }
+
+            if (cmd.startsWith('+ai ') || cmd.startsWith(`${PREFIX}ai `)) {
+                const prompt = body.slice(4).trim();
+                if (!prompt) {
+                    await this.send(chat, `❌ Usage: +ai <question>`);
+                    return;
+                }
                 try {
-                    let audioUrl = null;
-
-                    // API Method 1: Vreden YT-MP3
-                    try {
-                        const res1 = await fetch(`https://api.vreden.web.id/api/ytmp3?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
-                        const json1 = await res1.json();
-                        audioUrl = json1?.result?.download?.url || json1?.result?.url;
-                    } catch(e) {}
-
-                    // API Method 2: Delirius API Backup
-                    if (!audioUrl) {
-                        try {
-                            const res2 = await fetch(`https://delirius-api-oficial.vercel.app/download/ytmp3?query=${encodeURIComponent(query)}`);
-                            const json2 = await res2.json();
-                            audioUrl = json2?.data?.download?.url || json2?.data?.url;
-                        } catch(e) {}
-                    }
-
-                    // API Method 3: Jiosaavn / Web Audio Backup
-                    if (!audioUrl) {
-                        try {
-                            const res3 = await fetch(`https://saavnapi-nine.vercel.app/result/?query=${encodeURIComponent(query)}`);
-                            const json3 = await res3.json();
-                            const song = Array.isArray(json3) ? json3[0] : json3?.data?.[0];
-                            audioUrl = song?.media_url || song?.url;
-                        } catch(e) {}
-                    }
-
-                    if (!audioUrl) {
-                        await this.send(chat, `❌ Song not found on any servers! Try another spelling.`);
-                        return;
-                    }
-
-                    const audioBuffer = Buffer.from(await (await fetch(audioUrl)).arrayBuffer());
-                    
-                    if (isVoiceNote) {
-                        await this.socket.sendMessage(chat, { audio: audioBuffer, mimetype: 'audio/mp4', ptt: true });
-                    } else {
-                        await this.socket.sendMessage(chat, { audio: audioBuffer, mimetype: 'audio/mp4', fileName: `${query}.mp4` });
-                    }
+                    const result = await geminiModel.generateContent(prompt);
+                    const reply = result.response.text();
+                    await this.send(chat, reply);
                 } catch (e) {
-                    await this.send(chat, `❌ Error processing audio! Please try again.`);
+                    await this.send(chat, `❌ AI error: ${e.message}`);
                 }
                 return;
             }
 
-            // ── ULTIMATE MULTI-API MP4 VIDEO DOWNLOADER ──
-            if(body.toLowerCase().startsWith(`${PREFIX}video `)){
-                const query = body.slice(PREFIX.length + 6).trim();
-                if(!query) return;
+            if (cmd.startsWith(`${PREFIX}txt `)) {
+                this.autoReplyPaused = false;
+                const parts = body.slice(PREFIX.length + 4).trim().split(/\s+/);
+                const lastToken = parts[parts.length - 1];
+                const maybeMs = Number(lastToken);
+                let ms = DEFAULT_LOOP_MS;
+                let txt = parts.join(' ');
 
-                await this.send(chat, `${TAG}\n\n📹 Searching & Fetching Video: *${query}*... ⚡`);
-                try {
-                    let videoUrl = null;
-
-                    // API Method 1: Vreden YT-MP4
-                    try {
-                        const res1 = await fetch(`https://api.vreden.web.id/api/ytmp4?url=https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`);
-                        const json1 = await res1.json();
-                        videoUrl = json1?.result?.download?.url || json1?.result?.url;
-                    } catch(e) {}
-
-                    // API Method 2: Delirius API Video Backup
-                    if (!videoUrl) {
-                        try {
-                            const res2 = await fetch(`https://delirius-api-oficial.vercel.app/download/ytmp4?query=${encodeURIComponent(query)}`);
-                            const json2 = await res2.json();
-                            videoUrl = json2?.data?.download?.url || json2?.data?.url;
-                        } catch(e) {}
-                    }
-
-                    if (!videoUrl) {
-                        await this.send(chat, `❌ Video not found! Try searching with a clearer title.`);
-                        return;
-                    }
-
-                    const videoBuffer = Buffer.from(await (await fetch(videoUrl)).arrayBuffer());
-                    await this.socket.sendMessage(chat, { video: videoBuffer, caption: `🎥 *${query}*\n\n${TAG}`, mimetype: 'video/mp4' });
-                } catch (e) {
-                    await this.send(chat, `❌ Error processing video! Please try again.`);
+                if (parts.length > 1 && Number.isFinite(maybeMs) && maybeMs > 0) {
+                    ms = getSafeDelay(maybeMs);
+                    parts.pop();
+                    txt = parts.join(' ');
                 }
+                if (!txt) return;
+
+                await this.hub.router.push('txt_start', { chat, txt, ms }, this.id);
                 return;
             }
 
-            // ── TEXT SPAM (STRICT LOCK) ──
-            if(body.toLowerCase().startsWith(`${PREFIX}txt `)){
-                const parts=body.slice(PREFIX.length+4).trim().split(' ');
-                const ms=parseInt(parts.pop()) || 10;
-                const txt=parts.join(' ');
-                await this.hub.router.push('txt_start',{chat,txt,ms},this.id); return;
-            }
+            for (const [key, setName] of Object.entries(SET_KEYS)) {
+                if (cmd.startsWith(`${PREFIX}${key} `)) {
+                    this.autoReplyPaused = false;
+                    const rawArgs = body.slice(PREFIX.length + key.length + 1).trim();
+                    if (!rawArgs || !isGroup) return;
 
-            // ── NAME CHANGE LOOPS ──
-            for(const [key,setName] of Object.entries(SET_KEYS)){
-                if(body.toLowerCase().startsWith(`${PREFIX}${key} `)){
-                    const txt=body.slice(PREFIX.length+key.length+1).trim();
-                    if(!isGroup) return;
-                    await this.hub.router.pushAll('nc_start',{chat,txt: iFnt(txt),key,setName},this.id); return;
+                    const parts = rawArgs.split(/\s+/);
+                    const lastToken = parts[parts.length - 1];
+                    const maybeMs = Number(lastToken);
+                    let ms = getSafeDelay(timingMap[key] || DEFAULT_LOOP_MS);
+                    let txt = rawArgs;
+
+                    if (parts.length > 1 && Number.isFinite(maybeMs) && maybeMs > 0) {
+                        ms = getSafeDelay(maybeMs);
+                        parts.pop();
+                        txt = parts.join(' ');
+                    }
+                    if (!txt) return;
+
+                    timingMap[key] = ms;
+                    writeJson(PATH_TIMING, timingMap);
+
+                    await this.hub.router.pushAll('nc_start', { chat, txt: iFnt(txt), key, setName, ms }, this.id);
+                    return;
                 }
             }
 
-        } catch(e) {}
+        } catch {}
     }
 
-    async handle(cmd, payload, notify=true){
-        const {chat} = payload;
-        try{
-            switch(cmd){
-            case 'nc_start':{
-                const {txt,key,setName}=payload;
-                const emojis=SETS[setName] || SETS.faces;
-                const ms=timingMap[key]||10;
-                const tid=`${chat}__nc_${key}`;
-                
-                this.nameLoops.set(tid, false);
-                await delay(100);
-                
-                this.nameLoops.set(tid,true);
-                let i=0;
-                
-                (async()=>{
-                    while(this.nameLoops.get(tid)){
-                        if(!this.socket||!this.online){ await delay(1000); continue; }
-                        const emo = emojis[i++%emojis.length];
-                        try {
-                            await this.socket.groupUpdateSubject(chat,`${emo} ${txt} ${emo}`);
-                        } catch{}
-                        await delay(ms);
-                    }
-                })();
-                if(notify) await this.send(chat,win(`${key} name change loop`));
-                break;
-            }
-            case 'txt_start':{
-                const {txt,ms}=payload;
-                const txtKey = `${chat}__txt`;
-                
-                if(this.txtLoop.has(txtKey)){
-                    this.txtLoop.get(txtKey).on = false;
-                    await delay(100);
+    async handle(cmd, payload, notify = true) {
+        const { chat } = payload;
+        try {
+            switch (cmd) {
+                case 'nc_start': {
+                    const { txt, key, setName, ms } = payload;
+                    if (!chat.endsWith('@g.us')) return;
+                    const emojis = SETS[setName] || SETS.faces;
+                    const safeDelay = getSafeDelay(ms ?? timingMap[key] ?? DEFAULT_LOOP_MS);
+                    const tid = `${chat}__nc_${key}`;
+
+                    const prev = this.nameLoops.get(tid);
+                    const nextEpoch = (prev?.epoch || 0) + 1;
+                    if (prev) prev.active = false;
+
+                    const stateObj = { active: true, epoch: nextEpoch };
+                    this.nameLoops.set(tid, stateObj);
+
+                    let idx = 0;
+                    (async () => {
+                        while (
+                            stateObj.active &&
+                            this.nameLoops.get(tid) === stateObj &&
+                            stateObj.epoch === nextEpoch
+                        ) {
+                            if (!this.socket || !this.online) {
+                                await delay(1500);
+                                continue;
+                            }
+                            const emo = emojis[idx++ % emojis.length];
+                            try {
+                                await this.socket.groupUpdateSubject(chat, `${emo} ${txt} ${emo}`);
+                            } catch {}
+
+                            const step = 250;
+                            let elapsed = 0;
+                            while (elapsed < safeDelay) {
+                                if (!stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
+                                await delay(Math.min(step, safeDelay - elapsed));
+                                elapsed += step;
+                            }
+                        }
+                    })();
+
+                    if (notify) await this.send(chat, win(`${key} (${safeDelay}ms)`));
+                    break;
                 }
+                case 'txt_start': {
+                    const { txt, ms } = payload;
+                    const safeDelay = getSafeDelay(ms ?? DEFAULT_LOOP_MS);
+                    const txtKey = `${chat}__txt`;
 
-                const loopControl = { on: true };
-                this.txtLoop.set(txtKey, loopControl);
+                    const prev = this.txtLoop.get(txtKey);
+                    const nextEpoch = (prev?.epoch || 0) + 1;
+                    if (prev) prev.active = false;
 
-                (async()=>{
-                    while(loopControl.on){
-                        if(!this.socket||!this.online){ await delay(1000); continue; }
-                        try{ await this.socket.sendMessage(chat,{text:txt}); }catch{}
-                        await delay(ms);
-                    }
-                })();
-                if(notify) await this.send(chat,win(`text spam loop (${ms}ms)`));
-                break;
+                    const loopObj = { active: true, epoch: nextEpoch };
+                    this.txtLoop.set(txtKey, loopObj);
+
+                    (async () => {
+                        while (
+                            loopObj.active &&
+                            this.txtLoop.get(txtKey) === loopObj &&
+                            loopObj.epoch === nextEpoch
+                        ) {
+                            if (!this.socket || !this.online) {
+                                await delay(1500);
+                                continue;
+                            }
+                            try {
+                                await this.socket.sendMessage(chat, { text: txt });
+                            } catch {}
+
+                            const step = 250;
+                            let elapsed = 0;
+                            while (elapsed < safeDelay) {
+                                if (!loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
+                                await delay(Math.min(step, safeDelay - elapsed));
+                                elapsed += step;
+                            }
+                        }
+                    })();
+
+                    if (notify) await this.send(chat, win(`text loop (${safeDelay}ms)`));
+                    break;
+                }
+                case 'kill_all': {
+                    this.stopAllLoopsForChat(chat);
+                    if (notify) await this.send(chat, `${TAG}\n\n🛑 All active loops stopped.`);
+                    break;
+                }
             }
-            case 'kill_all':{
-                for(const [k] of this.nameLoops) { this.nameLoops.set(k, false); }
-                this.nameLoops.clear();
-                for(const [, v] of this.txtLoop) { v.on = false; }
-                this.txtLoop.clear();
-                if(notify) await this.send(chat, `${TAG}\n\n🛑 All active loops & spams killed successfully!`);
-                break;
-            }
-            }
-        }catch(e){}
+        } catch {}
     }
 
-    async send(jid,text){
-        if(!this.socket||!this.online) return;
-        try{ await this.socket.sendMessage(jid,{text}); }catch(e){}
+    async send(jid, text) {
+        if (!this.socket || !this.online) return;
+        try {
+            await this.socket.sendMessage(jid, { text });
+        } catch {}
     }
 }
 
@@ -563,24 +716,70 @@ class Session {
 //  HUB INITIALIZATION
 // ═════════════════════════════════════════════
 class Hub {
-    constructor(){
+    constructor() {
         this.sessions = new Map();
-        this.router   = new Router();
+        this.router = new Router();
+        this.counter = 1;
     }
 
-    async boot(){
-        const id = "1";
-        const s = new Session(id, "917488917344", this);
-        this.sessions.set(id, s);
-        this.router.attach(id, s);
-        await s.init();
+    loadSavedNumbers() {
+        const saved = readJson(PATH_BOTS, { numbers: [] });
+        const list = Array.isArray(saved.numbers) ? saved.numbers : [];
+        const cleanList = list.map(normalizePhoneNumber).filter(Boolean);
+        if (CONFIGURED_BOT_NUMBER && !cleanList.includes(CONFIGURED_BOT_NUMBER)) {
+            cleanList.unshift(CONFIGURED_BOT_NUMBER);
+        }
+        return [...new Set(cleanList)];
+    }
+
+    saveNumbers(numbers) {
+        writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
+    }
+
+    async addNumber(phone, requesterJid = null) {
+        const clean = normalizePhoneNumber(phone);
+        if (!clean) return `❌ Invalid number.`;
+
+        const existing = [...this.sessions.values()].find(s => s.phone === clean);
+        if (existing) {
+            return `⚠️ +${clean} is already in session list.`;
+        }
+
+        const id = String(this.counter++);
+        const session = new Session(id, clean, this, requesterJid);
+        this.sessions.set(id, session);
+        this.router.attach(id, session);
+
+        const allNums = [...this.sessions.values()].map(x => x.phone).filter(Boolean);
+        this.saveNumbers(allNums);
+
+        await session.init();
+        return `${TAG}\n\nAdded +${clean}. Pairing code will appear in logs and chat.`;
+    }
+
+    async boot() {
+        const numbers = this.loadSavedNumbers();
+        if (numbers.length === 0) {
+            console.log('[BOOT] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use !addbot <number>.');
+            return;
+        }
+        for (const num of numbers) {
+            const id = String(this.counter++);
+            const session = new Session(id, num, this);
+            this.sessions.set(id, session);
+            this.router.attach(id, session);
+            await session.init();
+            await delay(1500);
+        }
     }
 }
 
 console.log(`
 ◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  SMW Spotify & Anti-Spam Guard Active!
+  Configured Number : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
+  Keep-Alive        : Every ${PING_MINUTES}m
+  Safe Delay Floor  : ${MIN_SAFE_DELAY_MS}ms
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
