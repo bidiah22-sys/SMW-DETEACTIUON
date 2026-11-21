@@ -33,7 +33,6 @@ const AUTO_READ_MESSAGES     = true;
 const AUTO_REACT_EMOJI       = "⚡";
 const AUTO_FUN_REPLY_ENABLED = true;
 const FUN_REPLY_COOLDOWN_MS  = 15000;
-const PAIR_COOLDOWN_MS       = 25000;
 // =========================================================================
 
 function normalizePhoneNumber(rawInput) {
@@ -64,14 +63,6 @@ try {
         fs.writeFileSync('./store/cookies.txt', Buffer.from(b64, 'base64').toString('utf8'));
     }
 } catch {}
-
-function removeDirSafe(dirPath) {
-    try {
-        if (fs.existsSync(dirPath)) {
-            fs.rmSync(dirPath, { recursive: true, force: true });
-        }
-    } catch {}
-}
 
 // ─────────────────────────────────────────────
 //  GEMINI AI CONFIG & SMART FUN/INTRO ENGINE
@@ -222,8 +213,8 @@ const MENU_TEXT = () => `
   > 🤖  ${PREFIX}ai [question]
          ↳ ${g('fast gemini ai assistant')}
 
-  > 📱  ${PREFIX}addbot [number] | ${PREFIX}relink [number]
-         ↳ ${g('link any country number with fresh pairing')}
+  > 📱  ${PREFIX}addbot [number] | ${PREFIX}bots
+         ↳ ${g('link any country number with isolated session')}
 
   > 👥  ${PREFIX}grpmenu
          ↳ ${g('group moderation commands')}
@@ -316,17 +307,15 @@ const SET_KEYS = {
 //  SESSION MANAGER (FULLY ISOLATED PER NUMBER)
 // ═════════════════════════════════════════════
 class Session {
-    constructor(id, phone, hub, requesterJid = null, freshAuth = false) {
+    constructor(id, phone, hub, requesterJid = null) {
         this.id = id;
         this.phone = normalizePhoneNumber(phone);
         this.hub = hub;
         this.requesterJid = requesterJid;
-        this.freshAuth = freshAuth;
         this.socket = null;
         this.online = false;
         this.self = null;
         this.codeRequested = false;
-        this.lastPairAttemptAt = 0;
         this.stopped = false;
         this.autoReplyPaused = false;
 
@@ -341,22 +330,6 @@ class Session {
                 if (now - v > 90000) this.processedMsgs.delete(k);
             }
         }, 90000);
-    }
-
-    getAuthDir() {
-        return PATH_AUTH(`${this.id}_${this.phone}`);
-    }
-
-    async destroySession() {
-        this.stopped = true;
-        this.online = false;
-        for (const entry of this.nameLoops.values()) entry.active = false;
-        for (const entry of this.txtLoop.values()) entry.active = false;
-        try {
-            if (this.socket?.ws?.close) this.socket.ws.close();
-            if (this.socket?.end) this.socket.end(undefined);
-        } catch {}
-        removeDirSafe(this.getAuthDir());
     }
 
     dedupeLocal(msgId) {
@@ -385,28 +358,6 @@ class Session {
         }
     }
 
-    async requestPairSafely(sock) {
-        if (this.stopped || this.online || this.codeRequested) return;
-        const now = Date.now();
-        if (now - this.lastPairAttemptAt < PAIR_COOLDOWN_MS) return;
-        this.lastPairAttemptAt = now;
-        this.codeRequested = true;
-
-        try {
-            const rawCode = await sock.requestPairingCode(this.phone);
-            const formatted = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode;
-            console.log(`\n========================================`);
-            console.log(`PAIRING CODE [${this.id}] (+${this.phone}): ${formatted}`);
-            console.log(`========================================\n`);
-
-            const codeMsg = `${TAG}\n\nPairing Code for +${this.phone}: *${formatted}*`;
-            await this.hub.deliverPairingCodeToOwner(codeMsg, this.requesterJid);
-        } catch (e) {
-            this.codeRequested = false;
-            console.log(`[${this.id}] Pairing code error:`, e.message);
-        }
-    }
-
     async init() {
         try {
             if (!this.phone) {
@@ -414,11 +365,7 @@ class Session {
                 return;
             }
 
-            const authDir = this.getAuthDir();
-            if (this.freshAuth) {
-                removeDirSafe(authDir);
-                this.freshAuth = false;
-            }
+            const authDir = PATH_AUTH(`${this.id}_${this.phone}`);
             ensureDir(authDir);
 
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -429,10 +376,28 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
-                connectTimeoutMs: 60000,
-                defaultQueryTimeoutMs: 60000
+                browser: Browsers.ubuntu("Chrome")
             });
+
+            if (!this.socket.authState.creds.registered && !this.codeRequested) {
+                this.codeRequested = true;
+                setTimeout(async () => {
+                    if (this.stopped || this.online) return;
+                    try {
+                        const rawCode = await this.socket.requestPairingCode(this.phone);
+                        const formatted = rawCode?.match(/.{1,4}/g)?.join('-') || rawCode;
+                        console.log(`\n========================================`);
+                        console.log(`PAIRING CODE [${this.id}] (+${this.phone}): ${formatted}`);
+                        console.log(`========================================\n`);
+
+                        const codeMsg = `${TAG}\n\nPairing Code for +${this.phone}: *${formatted}*`;
+                        await this.hub.deliverPairingCodeToOwner(codeMsg, this.requesterJid);
+                    } catch (e) {
+                        this.codeRequested = false;
+                        console.log(`[${this.id}] Pairing code error:`, e.message);
+                    }
+                }, 4000);
+            }
 
             this.socket.ev.on("creds.update", saveCreds);
 
@@ -442,19 +407,10 @@ class Session {
                     this.codeRequested = true;
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
                     console.log(`[${this.id}] Connected: +${this.phone}`);
-                } else if (connection === "connecting" && !this.socket.authState.creds.registered) {
-                    setTimeout(() => {
-                        this.requestPairSafely(this.socket);
-                    }, 3500);
                 } else if (connection === "close") {
                     this.online = false;
                     if (this.stopped) return;
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    if (statusCode === DisconnectReason.loggedOut) {
-                        removeDirSafe(authDir);
-                        this.codeRequested = false;
-                    }
-                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+                    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
                     if (shouldReconnect) {
                         setTimeout(() => {
                             if (!this.stopped) this.init();
@@ -532,25 +488,13 @@ class Session {
                     await this.send(chat, `❌ Provide a valid country code and phone number.`);
                     return;
                 }
-                const statusMsg = await this.hub.addNumber(cleanNum, chat, false);
-                await this.send(chat, statusMsg);
-                return;
-            }
-
-            if (cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink ')) {
-                const rawNum = body.slice(cmd.startsWith(`${PREFIX}relink `) ? PREFIX.length + 8 : 8).trim();
-                const cleanNum = normalizePhoneNumber(rawNum);
-                if (!cleanNum) {
-                    await this.send(chat, `❌ Provide a valid country code and phone number to relink.`);
-                    return;
-                }
-                const statusMsg = await this.hub.addNumber(cleanNum, chat, true);
+                const statusMsg = await this.hub.addNumber(cleanNum, chat);
                 await this.send(chat, statusMsg);
                 return;
             }
 
             if (cmd === `${PREFIX}bots` || cmd === '+bots') {
-                const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
+                const list = [...this.hub.sessions.values()];
                 if (list.length === 0) {
                     await this.send(chat, `${TAG}\n\nNo numbers configured yet.`);
                     return;
@@ -750,11 +694,11 @@ class Hub {
     getPrimarySession() {
         if (CONFIGURED_BOT_NUMBER) {
             const mainSess = [...this.sessions.values()].find(
-                s => s.phone === CONFIGURED_BOT_NUMBER && s.online && !s.stopped
+                s => s.phone === CONFIGURED_BOT_NUMBER && s.online
             );
             if (mainSess) return mainSess;
         }
-        return [...this.sessions.values()].find(s => s.online && !s.stopped) || null;
+        return [...this.sessions.values()].find(s => s.online) || null;
     }
 
     async deliverPairingCodeToOwner(codeMsg, requesterJid = null) {
@@ -784,30 +728,24 @@ class Hub {
         writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
     }
 
-    async addNumber(phone, requesterJid = null, forceFresh = false) {
+    async addNumber(phone, requesterJid = null) {
         const clean = normalizePhoneNumber(phone);
         if (!clean) return `❌ Invalid number.`;
 
-        const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
-        if (existingEntries.length > 0) {
-            if (!forceFresh) {
-                return `⚠️ +${clean} is already in session list. Use !relink ${clean} for a fresh code.`;
-            }
-            for (const [key, oldSess] of existingEntries) {
-                await oldSess.destroySession();
-                this.sessions.delete(key);
-            }
+        const existing = [...this.sessions.values()].find(s => s.phone === clean);
+        if (existing) {
+            return `⚠️ +${clean} is already in session list.`;
         }
 
         const id = String(this.counter++);
-        const session = new Session(id, clean, this, requesterJid, forceFresh);
+        const session = new Session(id, clean, this, requesterJid);
         this.sessions.set(id, session);
 
-        const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
+        const allNums = [...this.sessions.values()].map(x => x.phone).filter(Boolean);
         this.saveNumbers(allNums);
 
         await session.init();
-        return `${TAG}\n\n${forceFresh ? 'Fresh session started' : 'Added'} +${clean}. Pairing code will be sent to +${CONFIGURED_BOT_NUMBER || 'owner'}.`;
+        return `${TAG}\n\nAdded +${clean}. Pairing code will be sent to your WhatsApp (+${CONFIGURED_BOT_NUMBER || 'owner'}).`;
     }
 
     async boot() {
@@ -818,7 +756,7 @@ class Hub {
         }
         for (const num of numbers) {
             const id = String(this.counter++);
-            const session = new Session(id, num, this, null, false);
+            const session = new Session(id, num, this);
             this.sessions.set(id, session);
             await session.init();
             await delay(1500);
