@@ -1,8 +1,3 @@
-// ╔══════════════════════════════════════════════╗
-// ║                  𝗦𝗠𝗪 𝗜𝗢𝗦                     ║
-// ║         Multi-Bot WhatsApp Manager           ║
-// ╚══════════════════════════════════════════════╝
-
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
@@ -13,48 +8,35 @@ import makeWASocket, {
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
-// =========================================================================
-// PRIMARY BOT / OWNER NUMBER (WITH OR WITHOUT '+')
-// =========================================================================
-const BOT_NUMBER = "+9647882064284";
-
-// RENDER KEEP-ALIVE INTERVAL IN MINUTES
+const BRAND = '𝗠𝗔𝗥𝗞 𝗦𝗜𝗥';
+const DEFAULT_NUMBER = '917488917344';
+const BOT_NUMBER = '+9647882064284';
 const PING_MINUTES = 5;
+const PREFIX = '!';
 
-// AUTO-READ, REACT & FAST SMART/FUN AUTO-REPLY SETTINGS
-const AUTO_READ_MESSAGES     = true;
-const AUTO_REACT_EMOJI       = "⚡";
-const AUTO_FUN_REPLY_ENABLED = true;
-const FUN_REPLY_COOLDOWN_MS  = 15000;
-const PAIR_COOLDOWN_MS       = 15000;
-// =========================================================================
+const app = express();
+app.use(express.json());
 
 function normalizeStrictPhone(rawInput) {
     if (!rawInput) return '';
-    let digits = String(rawInput).replace(/\D/g, '').replace(/^0+/, '');
+    const digits = String(rawInput).replace(/\D/g, '').replace(/^0+/, '');
     if (digits.length < 7 || digits.length > 15) return '';
     return digits;
 }
 
-const CONFIGURED_BOT_NUMBER = normalizeStrictPhone(BOT_NUMBER);
-const PRIMARY_OWNER_JID = CONFIGURED_BOT_NUMBER ? `${CONFIGURED_BOT_NUMBER}@s.whatsapp.net` : null;
-const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [PRIMARY_OWNER_JID] : [];
+const PRIMARY_NUMBER = normalizeStrictPhone(BOT_NUMBER) || DEFAULT_NUMBER;
+const PRIMARY_OWNER_JID = `${PRIMARY_NUMBER}@s.whatsapp.net`;
 
-// ─────────────────────────────────────────────
-//  STORAGE PATHS & CONFIG
-// ─────────────────────────────────────────────
-const PATH_AUTH   = (id) => `./sessions/smw_session_${id}`;
-const PATH_USERS  = './store/users.json';
-const PATH_PREFIX = './store/prefix.json';
-const PATH_BOTS   = './store/bots.json';
+const PATH_USERS = './store/users.json';
+const PATH_BOTS = './store/bots.json';
 
-try {
-    fs.mkdirSync('./store', { recursive: true });
-    fs.mkdirSync('./sessions', { recursive: true });
-} catch {}
+function ensureDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+}
 
 function removeDirSafe(dirPath) {
     try {
@@ -64,514 +46,360 @@ function removeDirSafe(dirPath) {
     } catch {}
 }
 
-// ─────────────────────────────────────────────
-//  GEMINI AI CONFIG & SMART REPLY ENGINE
-// ─────────────────────────────────────────────
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
-const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-
-const FALLBACK_FUN_REPLIES = [
-    "System online and sharp. Tell me what we are building next.",
-    "Ready and active. Ask anything and let's go.",
-    "Fast engine active—how can I help?",
-    "Message received loud and clear."
-];
-
-async function generateSmartReply(userText) {
+function readJson(filePath, fallback) {
     try {
-        const prompt =
-            `You are SMW IOS, a fast, witty, confident automated assistant. ` +
-            `Reply quickly in 1-2 crisp lines matching the user's language and tone (Hindi, English, Hinglish, etc.). ` +
-            `User message: "${userText}"`;
-        const res = await geminiModel.generateContent(prompt);
-        const text = res?.response?.text()?.trim();
-        if (text) return text.slice(0, 400);
-    } catch {}
-    return FALLBACK_FUN_REPLIES[Math.floor(Math.random() * FALLBACK_FUN_REPLIES.length)];
-}
-
-// ─────────────────────────────────────────────
-//  EXPRESS SERVER + 5-MINUTE KEEP-ALIVE
-// ─────────────────────────────────────────────
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get('/', (_req, res) => {
-    res.status(200).json({
-        status: 'ok',
-        service: 'SMW IOS Manager',
-        primaryNumber: CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : null,
-        pingMinutes: PING_MINUTES,
-        uptimeSec: Math.floor(process.uptime())
-    });
-});
-
-app.get('/health', (_req, res) => {
-    res.status(200).send('OK');
-});
-
-function startKeepAlive() {
-    const intervalMs = PING_MINUTES * 60 * 1000;
-    const pingUrl = process.env.RENDER_EXTERNAL_URL
-        ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')}/health`
-        : `http://127.0.0.1:${PORT}/health`;
-
-    console.log(`[KEEP-ALIVE] Pinging every ${PING_MINUTES} minutes -> ${pingUrl}`);
-
-    setInterval(async () => {
-        try {
-            const resp = await fetch(pingUrl);
-            console.log(`[KEEP-ALIVE] Status ${resp.status} at ${new Date().toISOString()}`);
-        } catch (err) {
-            console.log(`[KEEP-ALIVE] Retry failed: ${err.message}`);
+        if (fs.existsSync(filePath)) {
+            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
         }
-    }, intervalMs);
+    } catch {}
+    return { ...fallback };
 }
 
-// ─────────────────────────────────────────────
-//  FONT & PERSISTENCE HELPERS
-// ─────────────────────────────────────────────
-const GLYPH = {
-    a:'ᴀ',b:'ʙ',c:'ᴄ',d:'ᴅ',e:'ᴇ',f:'ғ',g:'ɢ',h:'ʜ',i:'ɪ',j:'ᴊ',k:'ᴋ',l:'ʟ',
-    m:'ᴍ',n:'ɴ',o:'ᴏ',p:'ᴘ',q:'ǫ',r:'ʀ',s:'ꜱ',t:'ᴛ',u:'ᴜ',v:'ᴠ',w:'ᴡ',x:'x',y:'ʏ',z:'ᴢ',
-    A:'𝗔',B:'𝗕',C:'𝗖',D:'𝗗',E:'𝗘',F:'𝗙',G:'𝗚',H:'𝗛',I:'𝗜',J:'𝗝',K:'𝗞',L:'𝗟',
-    M:'𝗠',N:'𝗡',O:'𝗢',P:'𝗣',Q:'𝗤',R:'𝗥',S:'𝗦',T:'𝗧',U:'𝗨',V:'𝗩',W:'𝗪',X:'𝗫',Y:'𝗬',Z:'𝗭'
-};
-const g = str => String(str).split('').map(c => GLYPH[c] ?? c).join('');
-
-const ensureDir = p => {
-    const d = p.includes('/') ? p.substring(0, p.lastIndexOf('/')) : '.';
-    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-};
-const readJson = (p, def) => {
+function writeJson(filePath, data) {
     try {
-        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+        ensureDir('./store');
+        fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
     } catch {}
-    return { ...def };
-};
-const writeJson = (p, d) => {
-    try {
-        ensureDir(p);
-        fs.writeFileSync(p, JSON.stringify(d, null, 2));
-    } catch {}
-};
+}
 
-let userData   = readJson(PATH_USERS, { owners: [], subs: {} });
-let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
-let PREFIX     = prefixData.prefix || '!';
+ensureDir('./store');
+ensureDir('./sessions');
 
-const saveUsers = () => writeJson(PATH_USERS, userData);
+let userData = readJson(PATH_USERS, { owners: [PRIMARY_OWNER_JID] });
+if (!Array.isArray(userData.owners)) userData.owners = [PRIMARY_OWNER_JID];
+if (!userData.owners.includes(PRIMARY_OWNER_JID)) {
+    userData.owners.push(PRIMARY_OWNER_JID);
+    writeJson(PATH_USERS, userData);
+}
 
-const isOwner = j => {
-    if (!j) return false;
-    const cleanJid = j.split('@')[0].split(':')[0];
-    return userData.owners.includes(j) ||
-           ADMIN_NUMBERS.some(num => num && num.includes(cleanJid));
-};
+function isAuthorizedOwner(jid, fromMe = false) {
+    if (fromMe) return true;
+    if (!jid) return false;
+    const cleanNum = jid.split('@')[0].split(':')[0];
+    return userData.owners.some((o) => o.split('@')[0].split(':')[0] === cleanNum);
+}
 
-const grantOwner = j => {
-    if (!userData.owners.includes(j)) {
-        userData.owners.push(j);
-        saveUsers();
-        return true;
-    }
-    return false;
-};
-
-const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
-
-const MENU_TEXT = () => `
-  ┌─────────────────────────────────────────┐
-  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
-  ├─────────────────────────────────────────┤
-  │  ✨ Prefix    : ${PREFIX}                      │
-  │  ⏱️ KeepAlive : ${PING_MINUTES}m                     │
-  └─────────────────────────────────────────┘
-
-  • ${PREFIX}addbot [country+number] ➔ ${g('Pair any number & send code')}
-  • ${PREFIX}relink [country+number] ➔ ${g('Clear old auth & get fresh code')}
-  • ${PREFIX}bots                    ➔ ${g('List connected/pending numbers')}
-  • ${PREFIX}ai [question]           ➔ ${g('Gemini AI reply')}
-  • ${PREFIX}admin                   ➔ ${g('Claim owner in DM')}
-`;
-
-// ═════════════════════════════════════════════
-//  SESSION MANAGER (STRICTLY ISOLATED PER NUMBER)
-// ═════════════════════════════════════════════
-class Session {
+class PairingSession {
     constructor(id, phone, hub, requesterJid = null, freshAuth = false) {
         this.id = id;
         this.phone = normalizeStrictPhone(phone);
         this.hub = hub;
         this.requesterJid = requesterJid;
         this.freshAuth = freshAuth;
-        this.socket = null;
+        this.authDir = `./sessions/mark_sir_${this.id}_${this.phone}`;
+        this.sock = null;
         this.online = false;
-        this.self = null;
         this.codeRequested = false;
         this.pairInFlight = false;
-        this.lastPairAttemptAt = 0;
         this.stopped = false;
-
-        this.processedMsgs = new Map();
-        this.lastFunReplyAt = new Map();
-
-        setInterval(() => {
-            const now = Date.now();
-            for (const [k, v] of this.processedMsgs) {
-                if (now - v > 90000) this.processedMsgs.delete(k);
-            }
-        }, 90000);
+        this.seenMsgIds = new Map();
     }
 
-    getAuthDir() {
-        return PATH_AUTH(`${this.id}_${this.phone}`);
-    }
-
-    async destroySession() {
+    async cleanup() {
         this.stopped = true;
         this.online = false;
         try {
-            if (this.socket?.ws?.close) this.socket.ws.close();
-            if (this.socket?.end) this.socket.end(undefined);
+            if (this.sock?.ws?.close) this.sock.ws.close();
+            if (this.sock?.end) this.sock.end(undefined);
         } catch {}
-        removeDirSafe(this.getAuthDir());
+        removeDirSafe(this.authDir);
     }
 
-    dedupeLocal(msgId) {
-        if (!msgId) return true;
-        if (this.processedMsgs.has(msgId)) return false;
-        this.processedMsgs.set(msgId, Date.now());
-        return true;
-    }
-
-    async requestPairStrict(sock) {
-        if (!sock || this.stopped || this.online || this.codeRequested || this.pairInFlight) return;
+    isDuplicate(msgId) {
+        if (!msgId) return false;
         const now = Date.now();
-        if (now - this.lastPairAttemptAt < PAIR_COOLDOWN_MS) return;
+        for (const [k, ts] of this.seenMsgIds.entries()) {
+            if (now - ts > 90000) this.seenMsgIds.delete(k);
+        }
+        if (this.seenMsgIds.has(msgId)) return true;
+        this.seenMsgIds.set(msgId, now);
+        return false;
+    }
+
+    async triggerPairingCode(sock) {
+        if (!sock || this.stopped || this.online || this.codeRequested || this.pairInFlight) return;
+        if (sock.authState?.creds?.registered) {
+            this.codeRequested = true;
+            return;
+        }
 
         this.pairInFlight = true;
-        this.lastPairAttemptAt = now;
-
         try {
-            if (sock.authState?.creds?.registered) {
-                this.codeRequested = true;
-                return;
-            }
+            await delay(1500);
             const rawCode = await sock.requestPairingCode(this.phone);
             const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-            if (!cleanCode) throw new Error('Empty pairing code returned');
+            if (!cleanCode) throw new Error('Empty pairing code');
 
             this.codeRequested = true;
-            const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
+            const formattedCode = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
 
-            console.log(`\n========================================`);
-            console.log(`PAIRING CODE [${this.id}] (+${this.phone}): ${formatted}`);
-            console.log(`========================================\n`);
+            console.log(`\n╔══════════════════════════════════════════╗`);
+            console.log(`║  ${BRAND} PAIRING CODE [${this.id}]          ║`);
+            console.log(`║  Number : +${this.phone}                 ║`);
+            console.log(`║  Code   : ${formattedCode}               ║`);
+            console.log(`╚══════════════════════════════════════════╝\n`);
 
-            const codeMsg =
-                `${TAG}\n\n` +
-                `🔑 Pairing Code for *+${this.phone}*:\n` +
-                `👉 *${formatted}*\n\n` +
-                `WhatsApp > Linked Devices > Link with phone number`;
+            const msgText =
+                `👑 *${BRAND} PAIRING CODE*\n\n` +
+                `📱 Number : *+${this.phone}*\n` +
+                `🔑 Code   : *${formattedCode}*\n\n` +
+                `फ़ोन में: *WhatsApp > Linked Devices > Link a Device > Link with phone number instead*`;
 
-            await this.hub.deliverPairingCodeToOwner(codeMsg, this.requesterJid);
-        } catch (e) {
+            await this.hub.sendCodeToRequester(msgText, this.requesterJid);
+        } catch (err) {
             this.codeRequested = false;
-            console.log(`[${this.id}] Pairing code error (+${this.phone}):`, e.message);
-            const errMsg = `${TAG}\n\n❌ Could not generate pairing code for *+${this.phone}*.\nReason: ${e.message}\nTip: Try *${PREFIX}relink ${this.phone}*`;
-            await this.hub.deliverPairingCodeToOwner(errMsg, this.requesterJid);
+            console.error(`[${this.id}] Pairing error (+${this.phone}):`, err.message);
+            const errText =
+                `❌ *${BRAND}* Pairing failed for *+${this.phone}*\n` +
+                `Reason: ${err.message}\n` +
+                `Try: *${PREFIX}relink ${this.phone}*`;
+            await this.hub.sendCodeToRequester(errText, this.requesterJid);
         } finally {
             this.pairInFlight = false;
         }
     }
 
-    async init() {
+    async start() {
+        if (!this.phone) {
+            console.log(`[${this.id}] Invalid phone number.`);
+            return;
+        }
+
+        if (this.freshAuth) {
+            removeDirSafe(this.authDir);
+            this.freshAuth = false;
+        }
+        ensureDir(this.authDir);
+
+        const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
+        const { version } = await fetchLatestBaileysVersion();
+
+        this.sock = makeWASocket({
+            auth: state,
+            version,
+            logger: pino({ level: 'silent' }),
+            printQRInTerminal: false,
+            browser: Browsers.ubuntu('Chrome'),
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 60000,
+            markOnlineOnConnect: false
+        });
+
+        this.sock.ev.on('creds.update', saveCreds);
+
+        this.sock.ev.on('connection.update', async (update) => {
+            const { connection, qr, lastDisconnect } = update;
+
+            if ((qr || connection === 'connecting') && !state.creds.registered && !this.codeRequested) {
+                await this.triggerPairingCode(this.sock);
+            }
+
+            if (connection === 'open') {
+                this.online = true;
+                this.codeRequested = true;
+                console.log(`✅ [${this.id}] ${BRAND} Connected: +${this.phone}`);
+            } else if (connection === 'close') {
+                this.online = false;
+                if (this.stopped) return;
+
+                const statusCode = lastDisconnect?.error instanceof Boom
+                    ? lastDisconnect.error.output.statusCode
+                    : 500;
+
+                if (statusCode === DisconnectReason.loggedOut) {
+                    removeDirSafe(this.authDir);
+                    this.codeRequested = false;
+                    return;
+                }
+
+                await delay(5000);
+                if (!this.stopped) this.start();
+            }
+        });
+
+        this.sock.ev.on('messages.upsert', (m) => this.onMessages(m));
+    }
+
+    async onMessages({ messages, type }) {
         try {
-            if (!this.phone) {
-                console.log(`[${this.id}] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use ${PREFIX}addbot <number>.`);
+            if (type !== 'notify') return;
+            const raw = messages?.[0];
+            if (!raw?.message) return;
+            if (this.isDuplicate(raw.key.id)) return;
+
+            const chat = raw.key.remoteJid;
+            const sender = raw.key.participant || chat;
+            if (!isAuthorizedOwner(sender, raw.key.fromMe)) return;
+
+            const text = (
+                raw.message.conversation ||
+                raw.message.extendedTextMessage?.text ||
+                raw.message.imageMessage?.caption ||
+                ''
+            ).trim();
+            const lower = text.toLowerCase();
+
+            if (lower.startsWith(`${PREFIX}addbot `) || lower.startsWith('+pair ')) {
+                const rawNum = text.slice(lower.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
+                const cleanNum = normalizeStrictPhone(rawNum);
+                if (!cleanNum) {
+                    await this.sendText(chat, `❌ सही नंबर डालें (country code + number, बिना + के)।\nउदाहरण: *${PREFIX}addbot 9647882064284* या *+pair 917488917344*`);
+                    return;
+                }
+                const reply = await this.hub.addSession(cleanNum, sender, false);
+                await this.sendText(chat, reply);
                 return;
             }
 
-            const authDir = this.getAuthDir();
-            if (this.freshAuth) {
-                removeDirSafe(authDir);
-                this.freshAuth = false;
-            }
-            ensureDir(authDir);
-
-            const { state, saveCreds } = await useMultiFileAuthState(authDir);
-            const { version } = await fetchLatestBaileysVersion();
-
-            this.socket = makeWASocket({
-                auth: state,
-                version,
-                logger: pino({ level: "silent" }),
-                printQRInTerminal: false,
-                browser: Browsers.macOS("Chrome"),
-                connectTimeoutMs: 60000,
-                defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false
-            });
-
-            this.socket.ev.on("creds.update", saveCreds);
-
-            this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-                if (connection === "open") {
-                    this.online = true;
-                    this.codeRequested = true;
-                    this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-                    console.log(`[${this.id}] Connected: +${this.phone}`);
-                } else if (connection === "connecting" && !this.socket.authState.creds.registered && !this.codeRequested) {
-                    setTimeout(() => {
-                        this.requestPairStrict(this.socket);
-                    }, 4000);
-                } else if (connection === "close") {
-                    this.online = false;
-                    if (this.stopped) return;
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    if (statusCode === DisconnectReason.loggedOut) {
-                        removeDirSafe(authDir);
-                        this.codeRequested = false;
-                    }
-                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                    if (shouldReconnect) {
-                        setTimeout(() => {
-                            if (!this.stopped) this.init();
-                        }, 5000);
-                    }
+            if (lower.startsWith(`${PREFIX}relink `) || lower.startsWith('+relink ')) {
+                const rawNum = text.slice(lower.startsWith(`${PREFIX}relink `) ? PREFIX.length + 8 : 8).trim();
+                const cleanNum = normalizeStrictPhone(rawNum);
+                if (!cleanNum) {
+                    await this.sendText(chat, `❌ सही नंबर डालें। उदाहरण: *${PREFIX}relink 9647882064284*`);
+                    return;
                 }
-            });
+                const reply = await this.hub.addSession(cleanNum, sender, true);
+                await this.sendText(chat, reply);
+                return;
+            }
 
-            this.socket.ev.on('messages.upsert', m => this.receive(m));
-        } catch (e) {
-            console.error(`[${this.id}] Init error:`, e.message);
+            if (lower === `${PREFIX}bots` || lower === '+bots') {
+                const active = [...this.hub.sessions.values()].filter((s) => !s.stopped);
+                if (!active.length) {
+                    await this.sendText(chat, `👑 *${BRAND}* — कोई सेशन नहीं मिला।`);
+                    return;
+                }
+                const list = active.map((s, i) => `${i + 1}. +${s.phone} — ${s.online ? '🟢 Online' : '⏳ Pairing/Waiting'}`);
+                await this.sendText(chat, `👑 *${BRAND} SESSIONS*\n\n${list.join('\n')}`);
+                return;
+            }
+
+            if (lower === `${PREFIX}menu` || lower === '+menu') {
+                await this.sendText(
+                    chat,
+                    `👑 *${BRAND} PAIRING MANAGER*\n\n` +
+                    `• *${PREFIX}addbot <number>* / *+pair <number>* — नया नंबर जोड़ें और कोड पाएं\n` +
+                    `• *${PREFIX}relink <number>* — पुराना auth साफ़ करके नया कोड पाएं\n` +
+                    `• *${PREFIX}bots* — सभी नंबरों की स्थिति देखें`
+                );
+            }
+        } catch (err) {
+            console.error(`[${this.id}] Message handler error:`, err.message);
         }
     }
 
-    async receive({ messages, type }) {
+    async sendText(jid, text) {
+        if (!this.sock || !this.online) return;
         try {
-            if (type !== 'notify') return;
-            const raw = messages[0];
-            if (!raw?.message) return;
-
-            const chat = raw.key.remoteJid;
-            const isGroup = chat.endsWith('@g.us');
-            const sender = raw.key.participant || chat;
-
-            if (!this.dedupeLocal(raw.key.id)) return;
-
-            if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
-                try {
-                    await this.socket.readMessages([raw.key]);
-                } catch {}
-            }
-
-            const body = (raw.message.conversation
-                        || raw.message.extendedTextMessage?.text
-                        || raw.message.imageMessage?.caption || '').trim();
-            const cmd = body.toLowerCase();
-
-            const isDM = !isGroup;
-            const isOwn = isOwner(sender) || raw.key.fromMe;
-
-            const isCommandText = body.startsWith(PREFIX) || body.startsWith('+');
-
-            if (!raw.key.fromMe && body && !isCommandText) {
-                try {
-                    await this.socket.sendMessage(chat, { react: { text: AUTO_REACT_EMOJI, key: raw.key } });
-                } catch {}
-
-                const lastTs = this.lastFunReplyAt.get(chat) || 0;
-                if (AUTO_FUN_REPLY_ENABLED && Date.now() - lastTs >= FUN_REPLY_COOLDOWN_MS) {
-                    this.lastFunReplyAt.set(chat, Date.now());
-                    const replyText = await generateSmartReply(body);
-                    await this.send(chat, replyText);
-                }
-            }
-
-            if (isDM && (cmd === `${PREFIX}admin` || cmd === '+admin')) {
-                if (!userData.owners.length) {
-                    grantOwner(sender);
-                    await this.send(chat, `${TAG}\n\n👑 ${g('you are now the owner')}`);
-                } else if (isOwn) {
-                    await this.send(chat, `⚠️ ${g('you already own this bot')}`);
-                }
-                return;
-            }
-
-            if (!isOwn) return;
-
-            if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ')) {
-                const rawNum = body.slice(cmd.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
-                const cleanNum = normalizeStrictPhone(rawNum);
-                if (!cleanNum) {
-                    await this.send(chat, `❌ Provide a valid country code + number (e.g. ${PREFIX}addbot 9647882064284 or +pair 917488917344).`);
-                    return;
-                }
-                const statusMsg = await this.hub.addNumber(cleanNum, sender, false);
-                await this.send(chat, statusMsg);
-                return;
-            }
-
-            if (cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink ')) {
-                const rawNum = body.slice(cmd.startsWith(`${PREFIX}relink `) ? PREFIX.length + 8 : 8).trim();
-                const cleanNum = normalizeStrictPhone(rawNum);
-                if (!cleanNum) {
-                    await this.send(chat, `❌ Provide a valid country code + number to relink.`);
-                    return;
-                }
-                const statusMsg = await this.hub.addNumber(cleanNum, sender, true);
-                await this.send(chat, statusMsg);
-                return;
-            }
-
-            if (cmd === `${PREFIX}bots` || cmd === '+bots') {
-                const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
-                if (list.length === 0) {
-                    await this.send(chat, `${TAG}\n\nNo numbers configured yet.`);
-                    return;
-                }
-                const lines = list.map((s, idx) => `${idx + 1}. +${s.phone} — ${s.online ? 'Online' : 'Pending/Pairing'}`);
-                await this.send(chat, `${TAG}\n\nSessions (${list.length}):\n\n${lines.join('\n')}`);
-                return;
-            }
-
-            if (cmd === `${PREFIX}menu` || cmd === '+menu') {
-                await this.send(chat, MENU_TEXT());
-                return;
-            }
-
-            if (cmd.startsWith('+ai ') || cmd.startsWith(`${PREFIX}ai `)) {
-                const prompt = body.slice(4).trim();
-                if (!prompt) {
-                    await this.send(chat, `❌ Usage: +ai <question>`);
-                    return;
-                }
-                try {
-                    const result = await geminiModel.generateContent(prompt);
-                    const reply = result.response.text();
-                    await this.send(chat, reply);
-                } catch (e) {
-                    await this.send(chat, `❌ AI error: ${e.message}`);
-                }
-                return;
-            }
-        } catch {}
-    }
-
-    async send(jid, text) {
-        if (!this.socket || !this.online) return;
-        try {
-            await this.socket.sendMessage(jid, { text });
+            await this.sock.sendMessage(jid, { text });
         } catch {}
     }
 }
 
-// ═════════════════════════════════════════════
-//  HUB INITIALIZATION
-// ═════════════════════════════════════════════
-class Hub {
+class SessionHub {
     constructor() {
         this.sessions = new Map();
         this.counter = 1;
     }
 
-    getPrimarySession() {
-        if (CONFIGURED_BOT_NUMBER) {
-            const mainSess = [...this.sessions.values()].find(
-                s => s.phone === CONFIGURED_BOT_NUMBER && s.online && !s.stopped
-            );
-            if (mainSess) return mainSess;
-        }
-        return [...this.sessions.values()].find(s => s.online && !s.stopped) || null;
+    getSenderSocket() {
+        const primaryOnline = [...this.sessions.values()].find(
+            (s) => s.phone === PRIMARY_NUMBER && s.online && !s.stopped
+        );
+        if (primaryOnline) return primaryOnline;
+        return [...this.sessions.values()].find((s) => s.online && !s.stopped) || null;
     }
 
-    async deliverPairingCodeToOwner(codeMsg, requesterJid = null) {
-        const senderSession = this.getPrimarySession();
-        if (!senderSession) return;
-
-        if (requesterJid) {
-            await senderSession.send(requesterJid, codeMsg);
+    async sendCodeToRequester(msgText, requesterJid = null) {
+        const sender = this.getSenderSocket();
+        if (!sender) {
+            console.log('[HUB] No online bot available yet to send WhatsApp code message.');
+            return;
         }
 
+        if (requesterJid) {
+            await sender.sendText(requesterJid, msgText);
+        }
         if (PRIMARY_OWNER_JID && requesterJid !== PRIMARY_OWNER_JID) {
-            await senderSession.send(PRIMARY_OWNER_JID, codeMsg);
+            await sender.sendText(PRIMARY_OWNER_JID, msgText);
         }
     }
 
     loadSavedNumbers() {
         const saved = readJson(PATH_BOTS, { numbers: [] });
-        const list = Array.isArray(saved.numbers) ? saved.numbers : [];
-        const cleanList = list.map(normalizeStrictPhone).filter(Boolean);
-        if (CONFIGURED_BOT_NUMBER && !cleanList.includes(CONFIGURED_BOT_NUMBER)) {
-            cleanList.unshift(CONFIGURED_BOT_NUMBER);
+        const list = Array.isArray(saved.numbers) ? saved.numbers.map(normalizeStrictPhone).filter(Boolean) : [];
+        if (!list.includes(PRIMARY_NUMBER)) {
+            list.unshift(PRIMARY_NUMBER);
         }
-        return [...new Set(cleanList)];
+        return [...new Set(list)];
     }
 
-    saveNumbers(numbers) {
-        writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
+    saveNumbers() {
+        const nums = [...this.sessions.values()].filter((s) => !s.stopped && s.phone).map((s) => s.phone);
+        writeJson(PATH_BOTS, { numbers: [...new Set(nums)] });
     }
 
-    async addNumber(phone, requesterJid = null, forceFresh = false) {
+    async addSession(phone, requesterJid = null, freshAuth = false) {
         const clean = normalizeStrictPhone(phone);
-        if (!clean) return `❌ Invalid number.`;
+        if (!clean) return '❌ Invalid phone number.';
 
-        const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
-        if (existingEntries.length > 0) {
-            if (!forceFresh) {
-                return `⚠️ +${clean} is already in session list. Use ${PREFIX}relink ${clean} for a fresh code.`;
-            }
-            for (const [key, oldSess] of existingEntries) {
-                await oldSess.destroySession();
-                this.sessions.delete(key);
-            }
+        const existing = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
+        if (existing.length > 0 && !freshAuth) {
+            return `⚠️ *+${clean}* पहले से मौजूद है। नया कोड लेने के लिए *${PREFIX}relink ${clean}* भेजें।`;
+        }
+
+        for (const [key, oldSess] of existing) {
+            await oldSess.cleanup();
+            this.sessions.delete(key);
         }
 
         const id = String(this.counter++);
-        const session = new Session(id, clean, this, requesterJid, forceFresh);
+        const session = new PairingSession(id, clean, this, requesterJid, freshAuth);
         this.sessions.set(id, session);
+        this.saveNumbers();
 
-        const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
-        this.saveNumbers(allNums);
-
-        await session.init();
-        return `${TAG}\n\n${forceFresh ? 'Fresh pairing started' : 'Pairing started'} for *+${clean}*.\nCode will be sent directly to you.`;
+        await session.start();
+        return `👑 *${BRAND}* — *+${clean}* के लिए पेयरिंग शुरू कर दी गई है। कोड सीधे आपको भेजा जाएगा।`;
     }
 
     async boot() {
         const numbers = this.loadSavedNumbers();
-        if (numbers.length === 0) {
-            console.log(`[BOOT] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use ${PREFIX}addbot <number>.`);
-            return;
-        }
         for (const num of numbers) {
             const id = String(this.counter++);
-            const session = new Session(id, num, this, null, false);
+            const session = new PairingSession(id, num, this, PRIMARY_OWNER_JID, false);
             this.sessions.set(id, session);
-            await session.init();
+            await session.start();
             await delay(1500);
         }
     }
 }
 
-console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Port              : ${PORT}
-  Keep-Alive        : Every ${PING_MINUTES}m
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`);
+const PORT = process.env.PORT || 3000;
+app.get('/', (_req, res) => res.status(200).send(`${BRAND} RUNNING (+${PRIMARY_NUMBER})`));
+app.get('/health', (_req, res) => res.status(200).send('OK'));
+
+function startKeepAlive() {
+    const baseUrl = process.env.RENDER_EXTERNAL_URL
+        ? process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')
+        : `http://127.0.0.1:${PORT}`;
+    const pingUrl = `${baseUrl}/health`;
+
+    setInterval(async () => {
+        try {
+            const res = await fetch(pingUrl);
+            console.log(`[${BRAND} PING] ${pingUrl} -> ${res.status}`);
+        } catch (err) {
+            console.log(`[${BRAND} PING] Failed:`, err.message);
+        }
+    }, PING_MINUTES * 60 * 1000);
+}
 
 process.on('uncaughtException', () => {});
 process.on('unhandledRejection', () => {});
 
-app.listen(PORT, async () => {
-    console.log(`[SERVER] Listening on port ${PORT}`);
+app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`\n👑 ${BRAND} SERVER STARTED ON PORT ${PORT} | PRIMARY: +${PRIMARY_NUMBER}\n`);
     startKeepAlive();
-    const hub = new Hub();
+    const hub = new SessionHub();
     await hub.boot();
 });
