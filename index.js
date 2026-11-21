@@ -19,7 +19,7 @@ import express from 'express';
 // =========================================================================
 // SET YOUR NUMBER HERE (WITH OR WITHOUT '+', e.g. "919876543210" or "+12025550199")
 // =========================================================================
-const BOT_NUMBER = "9647882064284";
+const BOT_NUMBER = "+9647882064284";
 
 // RENDER KEEP-ALIVE INTERVAL IN MINUTES
 const PING_MINUTES = 5;
@@ -43,7 +43,8 @@ function normalizePhoneNumber(rawInput) {
 }
 
 const CONFIGURED_BOT_NUMBER = normalizePhoneNumber(BOT_NUMBER);
-const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [`${CONFIGURED_BOT_NUMBER}@s.whatsapp.net`] : [];
+const PRIMARY_OWNER_JID = CONFIGURED_BOT_NUMBER ? `${CONFIGURED_BOT_NUMBER}@s.whatsapp.net` : null;
+const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [PRIMARY_OWNER_JID] : [];
 
 // ─────────────────────────────────────────────
 //  STORAGE PATHS & CONFIG
@@ -212,7 +213,7 @@ const MENU_TEXT = () => `
          ↳ ${g('fast gemini ai assistant')}
 
   > 📱  ${PREFIX}addbot [number] | ${PREFIX}bots
-         ↳ ${g('link any country number with pairing code')}
+         ↳ ${g('link any country number with isolated session')}
 
   > 👥  ${PREFIX}grpmenu
          ↳ ${g('group moderation commands')}
@@ -283,7 +284,7 @@ const isOwner = j => {
     if (!j) return false;
     const cleanJid = j.split('@')[0].split(':')[0];
     return userData.owners.includes(j) ||
-           ADMIN_NUMBERS.some(num => num.includes(cleanJid));
+           ADMIN_NUMBERS.some(num => num && num.includes(cleanJid));
 };
 
 const isSub = (j, grp) => userData.subs[grp]?.includes(j) || false;
@@ -302,45 +303,7 @@ const SET_KEYS = {
 };
 
 // ═════════════════════════════════════════════
-//  MESSAGE ROUTER
-// ═════════════════════════════════════════════
-class Router {
-    constructor() {
-        this.registry = new Map();
-        this.processed = new Map();
-        setInterval(() => {
-            const now = Date.now();
-            for (const [k, v] of this.processed) {
-                if (now - v > 90000) this.processed.delete(k);
-            }
-        }, 90000);
-    }
-    attach(id, session) { this.registry.set(id, session); }
-    dedupe(msgId) {
-        if (this.processed.has(msgId)) return false;
-        this.processed.set(msgId, Date.now());
-        return true;
-    }
-    push(cmd, payload, fromId, notify = true) {
-        const alive = [...this.registry.values()].filter(s => s.online);
-        return Promise.all(
-            alive.map(s => s.handle(cmd, payload, s.id === fromId && notify).catch(e => console.error(`[${s.id}]`, e.message)))
-        );
-    }
-    pushAll(cmd, payload, fromId, notify = true) {
-        const all = [...this.registry.values()];
-        return Promise.all(
-            all.map(s => s.handle(cmd, payload, s.id === fromId && notify).catch(e => console.error(`[${s.id}]`, e.message)))
-        );
-    }
-    getPrimary() {
-        const alive = [...this.registry.values()].filter(s => s.online);
-        return alive[0] || null;
-    }
-}
-
-// ═════════════════════════════════════════════
-//  SESSION MANAGER
+//  SESSION MANAGER (FULLY ISOLATED PER NUMBER)
 // ═════════════════════════════════════════════
 class Session {
     constructor(id, phone, hub, requesterJid = null) {
@@ -355,9 +318,25 @@ class Session {
         this.stopped = false;
         this.autoReplyPaused = false;
 
+        // Strictly isolated per session so conversations, loops & cooldowns never mix
+        this.processedMsgs = new Map();
         this.nameLoops = new Map();
         this.txtLoop = new Map();
         this.lastFunReplyAt = new Map();
+
+        setInterval(() => {
+            const now = Date.now();
+            for (const [k, v] of this.processedMsgs) {
+                if (now - v > 90000) this.processedMsgs.delete(k);
+            }
+        }, 90000);
+    }
+
+    dedupeLocal(msgId) {
+        if (!msgId) return true;
+        if (this.processedMsgs.has(msgId)) return false;
+        this.processedMsgs.set(msgId, Date.now());
+        return true;
     }
 
     stopAllLoopsForChat(chat) {
@@ -411,15 +390,10 @@ class Session {
                         console.log(`PAIRING CODE [${this.id}] (+${this.phone}): ${formatted}`);
                         console.log(`========================================\n`);
 
-                        if (this.requesterJid) {
-                            const primary = this.hub.router.getPrimary();
-                            if (primary) {
-                                await primary.send(
-                                    this.requesterJid,
-                                    `${TAG}\n\nPairing Code (+${this.phone}): *${formatted}*`
-                                );
-                            }
-                        }
+                        const codeMsg = `${TAG}\n\nPairing Code for +${this.phone}: *${formatted}*`;
+
+                        // Always deliver pairing code to the primary/configured owner number's WhatsApp
+                        await this.hub.deliverPairingCodeToOwner(codeMsg, this.requesterJid);
                     } catch (e) {
                         this.codeRequested = false;
                         console.log(`[${this.id}] Pairing code error:`, e.message);
@@ -463,8 +437,8 @@ class Session {
             const isGroup = chat.endsWith('@g.us');
             const sender = raw.key.participant || chat;
 
-            if (this.hub.router.getPrimary()?.id !== this.id) return;
-            if (!this.hub.router.dedupe(raw.key.id)) return;
+            // Strictly handle messages on THIS session only (isolated per number)
+            if (!this.dedupeLocal(raw.key.id)) return;
 
             if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
                 try {
@@ -483,7 +457,7 @@ class Session {
 
             const isCommandText = body.startsWith(PREFIX) || body.startsWith('+');
 
-            // React + fast smart/fun reply on non-command messages (respects killall pause & cooldown)
+            // Per-chat, per-session isolated auto-react & smart reply
             if (!raw.key.fromMe && body && !isCommandText && !this.autoReplyPaused) {
                 try {
                     await this.socket.sendMessage(chat, { react: { text: AUTO_REACT_EMOJI, key: raw.key } });
@@ -540,7 +514,7 @@ class Session {
             if (cmd === `${PREFIX}games`) { await this.send(chat, GAMES_MENU()); return; }
 
             if (cmd === `${PREFIX}killall` || cmd === `${PREFIX}ancstop` || cmd === `${PREFIX}stoptxt` || cmd === '-all') {
-                await this.hub.router.pushAll('kill_all', { chat }, this.id);
+                await this.handle('kill_all', { chat }, true);
                 return;
             }
 
@@ -575,7 +549,7 @@ class Session {
                 }
                 if (!txt) return;
 
-                await this.hub.router.push('txt_start', { chat, txt, ms }, this.id);
+                await this.handle('txt_start', { chat, txt, ms }, true);
                 return;
             }
 
@@ -601,7 +575,7 @@ class Session {
                     timingMap[key] = ms;
                     writeJson(PATH_TIMING, timingMap);
 
-                    await this.hub.router.pushAll('nc_start', { chat, txt: iFnt(txt), key, setName, ms }, this.id);
+                    await this.handle('nc_start', { chat, txt: iFnt(txt), key, setName, ms }, true);
                     return;
                 }
             }
@@ -718,8 +692,32 @@ class Session {
 class Hub {
     constructor() {
         this.sessions = new Map();
-        this.router = new Router();
         this.counter = 1;
+    }
+
+    getPrimarySession() {
+        if (CONFIGURED_BOT_NUMBER) {
+            const mainSess = [...this.sessions.values()].find(
+                s => s.phone === CONFIGURED_BOT_NUMBER && s.online
+            );
+            if (mainSess) return mainSess;
+        }
+        return [...this.sessions.values()].find(s => s.online) || null;
+    }
+
+    async deliverPairingCodeToOwner(codeMsg, requesterJid = null) {
+        const senderSession = this.getPrimarySession();
+        if (!senderSession) return;
+
+        // Send directly to the configured owner WhatsApp number (+9647882064284)
+        if (PRIMARY_OWNER_JID) {
+            await senderSession.send(PRIMARY_OWNER_JID, codeMsg);
+        }
+
+        // Also mirror to requester chat if command came from another chat
+        if (requesterJid && requesterJid !== PRIMARY_OWNER_JID) {
+            await senderSession.send(requesterJid, codeMsg);
+        }
     }
 
     loadSavedNumbers() {
@@ -748,13 +746,12 @@ class Hub {
         const id = String(this.counter++);
         const session = new Session(id, clean, this, requesterJid);
         this.sessions.set(id, session);
-        this.router.attach(id, session);
 
         const allNums = [...this.sessions.values()].map(x => x.phone).filter(Boolean);
         this.saveNumbers(allNums);
 
         await session.init();
-        return `${TAG}\n\nAdded +${clean}. Pairing code will appear in logs and chat.`;
+        return `${TAG}\n\nAdded +${clean}. Pairing code will be sent to your WhatsApp (+${CONFIGURED_BOT_NUMBER || 'owner'}).`;
     }
 
     async boot() {
@@ -767,7 +764,6 @@ class Hub {
             const id = String(this.counter++);
             const session = new Session(id, num, this);
             this.sessions.set(id, session);
-            this.router.attach(id, session);
             await session.init();
             await delay(1500);
         }
