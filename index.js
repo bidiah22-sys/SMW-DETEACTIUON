@@ -443,7 +443,8 @@ class Session {
                 printQRInTerminal: false,
                 browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
-                defaultQueryTimeoutMs: 60000
+                defaultQueryTimeoutMs: 60000,
+                markOnlineOnConnect: false
             });
 
             this.socket.ev.on("creds.update", saveCreds);
@@ -457,7 +458,7 @@ class Session {
                 } else if (connection === "connecting" && !this.socket.authState.creds.registered && !this.codeRequested) {
                     setTimeout(() => {
                         this.requestPairStrict(this.socket);
-                    }, 4500);
+                    }, 5000);
                 } else if (connection === "close") {
                     this.online = false;
                     if (this.stopped) return;
@@ -470,7 +471,7 @@ class Session {
                     if (shouldReconnect) {
                         setTimeout(() => {
                             if (!this.stopped) this.init();
-                        }, 5000);
+                        }, 6000);
                     }
                 }
             });
