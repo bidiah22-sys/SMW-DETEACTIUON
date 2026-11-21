@@ -1,4 +1,3 @@
-```javascript
 // ╔══════════════════════════════════════════════╗
 // ║                  𝗦𝗠𝗪 𝗜𝗢𝗦                     ║
 // ║         Multi-Bot WhatsApp Manager           ║
@@ -18,9 +17,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
 // =========================================================================
-// SET YOUR PRIMARY NUMBER HERE FIRST (e.g. "+919876543210" or "919876543210")
+// PRIMARY BOT / OWNER NUMBER (WITH OR WITHOUT '+')
 // =========================================================================
-const BOT_NUMBER = "9647882064284";
+const BOT_NUMBER = "+9647882064284";
 
 // RENDER KEEP-ALIVE INTERVAL IN MINUTES
 const PING_MINUTES = 5;
@@ -37,7 +36,6 @@ const FUN_REPLY_COOLDOWN_MS  = 15000;
 const PAIR_COOLDOWN_MS       = 30000;
 // =========================================================================
 
-// Strict E.164 digits normalization (no '+', no spaces, no leading '0')
 function normalizeStrictPhone(rawInput) {
     if (!rawInput) return '';
     let digits = String(rawInput).replace(/\D/g, '').replace(/^0+/, '');
@@ -113,6 +111,7 @@ app.get('/', (_req, res) => {
     res.status(200).json({
         status: 'ok',
         service: 'SMW IOS Manager',
+        primaryNumber: CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : null,
         pingMinutes: PING_MINUTES,
         uptimeSec: Math.floor(process.uptime())
     });
@@ -122,9 +121,7 @@ app.get('/health', (_req, res) => {
     res.status(200).send('OK');
 });
 
-app.listen(PORT, () => {
-    console.log(`[SERVER] Listening on port ${PORT}`);
-
+function startKeepAlive() {
     const intervalMs = PING_MINUTES * 60 * 1000;
     const pingUrl = process.env.RENDER_EXTERNAL_URL
         ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')}/health`
@@ -140,7 +137,7 @@ app.listen(PORT, () => {
             console.log(`[KEEP-ALIVE] Retry failed: ${err.message}`);
         }
     }, intervalMs);
-});
+}
 
 // ─────────────────────────────────────────────
 //  EMOJI BANKS
@@ -332,14 +329,13 @@ class Session {
         this.lastPairAttemptAt = 0;
         this.stopped = false;
         this.autoReplyPaused = false;
-        this.dedupeTimer = null;
 
         this.processedMsgs = new Map();
         this.nameLoops = new Map();
         this.txtLoop = new Map();
         this.lastFunReplyAt = new Map();
 
-        this.dedupeTimer = setInterval(() => {
+        setInterval(() => {
             const now = Date.now();
             for (const [k, v] of this.processedMsgs) {
                 if (now - v > 90000) this.processedMsgs.delete(k);
@@ -351,22 +347,16 @@ class Session {
         return PATH_AUTH(`${this.id}_${this.phone}`);
     }
 
-    async destroySession(deleteAuth = true) {
+    async destroySession() {
         this.stopped = true;
         this.online = false;
-        if (this.dedupeTimer) {
-            clearInterval(this.dedupeTimer);
-            this.dedupeTimer = null;
-        }
         for (const entry of this.nameLoops.values()) entry.active = false;
         for (const entry of this.txtLoop.values()) entry.active = false;
         try {
             if (this.socket?.ws?.close) this.socket.ws.close();
             if (this.socket?.end) this.socket.end(undefined);
         } catch {}
-        if (deleteAuth) {
-            removeDirSafe(this.getAuthDir());
-        }
+        removeDirSafe(this.getAuthDir());
     }
 
     dedupeLocal(msgId) {
@@ -459,7 +449,6 @@ class Session {
             this.socket.ev.on("creds.update", saveCreds);
 
             this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-                if (this.stopped) return;
                 if (connection === "open") {
                     this.online = true;
                     this.codeRequested = true;
@@ -467,7 +456,7 @@ class Session {
                     console.log(`[${this.id}] Connected: +${this.phone}`);
                 } else if (connection === "connecting" && !this.socket.authState.creds.registered && !this.codeRequested) {
                     setTimeout(() => {
-                        if (!this.stopped) this.requestPairStrict(this.socket);
+                        this.requestPairStrict(this.socket);
                     }, 4500);
                 } else if (connection === "close") {
                     this.online = false;
@@ -494,7 +483,7 @@ class Session {
 
     async receive({ messages, type }) {
         try {
-            if (this.stopped || type !== 'notify') return;
+            if (type !== 'notify') return;
             const raw = messages[0];
             if (!raw?.message) return;
 
@@ -754,7 +743,7 @@ class Session {
     }
 
     async send(jid, text) {
-        if (this.stopped || !this.socket || !this.online) return;
+        if (!this.socket || !this.online) return;
         try {
             await this.socket.sendMessage(jid, { text });
         } catch {}
@@ -768,18 +757,6 @@ class Hub {
     constructor() {
         this.sessions = new Map();
         this.counter = 1;
-        this.pairQueue = Promise.resolve();
-    }
-
-    enqueuePairInit(session) {
-        this.pairQueue = this.pairQueue
-            .then(async () => {
-                if (session.stopped) return;
-                await session.init();
-                await delay(2500);
-            })
-            .catch(() => {});
-        return this.pairQueue;
     }
 
     getPrimarySession() {
@@ -829,7 +806,7 @@ class Hub {
                 return `⚠️ +${clean} is already in session list. Use !relink ${clean} for a fresh code.`;
             }
             for (const [key, oldSess] of existingEntries) {
-                await oldSess.destroySession(true);
+                await oldSess.destroySession();
                 this.sessions.delete(key);
             }
         }
@@ -841,8 +818,8 @@ class Hub {
         const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
         this.saveNumbers(allNums);
 
-        await this.enqueuePairInit(session);
-        return `${TAG}\n\n${forceFresh ? 'Fresh session queued' : 'Added'} +${clean}. Pairing code will be sent to your WhatsApp once ready.`;
+        await session.init();
+        return `${TAG}\n\n${forceFresh ? 'Fresh session started' : 'Added'} +${clean}. Pairing code will be sent to +${CONFIGURED_BOT_NUMBER || 'owner'}.`;
     }
 
     async boot() {
@@ -855,7 +832,8 @@ class Hub {
             const id = String(this.counter++);
             const session = new Session(id, num, this, null, false);
             this.sessions.set(id, session);
-            await this.enqueuePairInit(session);
+            await session.init();
+            await delay(1500);
         }
     }
 }
@@ -863,7 +841,8 @@ class Hub {
 console.log(`
 ◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Configured Number : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
+  Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
+  Port              : ${PORT}
   Keep-Alive        : Every ${PING_MINUTES}m
   Safe Delay Floor  : ${MIN_SAFE_DELAY_MS}ms
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -872,9 +851,9 @@ console.log(`
 process.on('uncaughtException', () => {});
 process.on('unhandledRejection', () => {});
 
-const hub = new Hub();
-await hub.boot();
-```
-
-`index.js` update kar diya hai—ab aap `BOT_NUMBER` mein apna primary/Indian number set karke pehle use online kar sakte hain, aur uske baad `!addbot <number>` ya `!relink <number>` se baaki numbers step-by-step add kar sakte hain. Kya aap abhi primary number set karke deploy kar rahe hain?
-```
+app.listen(PORT, async () => {
+    console.log(`[SERVER] Listening on port ${PORT}`);
+    startKeepAlive();
+    const hub = new Hub();
+    await hub.boot();
+});
