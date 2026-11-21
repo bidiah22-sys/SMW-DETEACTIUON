@@ -28,7 +28,7 @@ const PING_MINUTES = 5;
 const MIN_SAFE_DELAY_MS = 1200;
 const DEFAULT_LOOP_MS   = 2500;
 
-// AUTO-READ, REACT & GLOBAL AUTO-REPLY SETTINGS
+// AUTO-READ, REACT & PER-CHAT AUTO-REPLY SETTINGS
 const AUTO_READ_MESSAGES     = true;
 const AUTO_REACT_EMOJI       = "⚡";
 const FUN_REPLY_COOLDOWN_MS  = 8000;
@@ -101,12 +101,30 @@ let timingMap  = readJson(PATH_TIMING, {
 let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
 let PREFIX     = prefixData.prefix || '!';
 let runtimeState = readJson(PATH_STATE, {
-    globalAutoReply: false,
-    systemKilled: false
+    botPaused: false,
+    autoReplyChats: {}
 });
+
+if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'object') {
+    runtimeState.autoReplyChats = {};
+}
 
 function saveRuntimeState() {
     writeJson(PATH_STATE, runtimeState);
+}
+
+function isChatAutoReplyOn(sessionPhone, chatJid) {
+    return Boolean(runtimeState.autoReplyChats[`${sessionPhone}::${chatJid}`]);
+}
+
+function setChatAutoReply(sessionPhone, chatJid, enabled) {
+    const key = `${sessionPhone}::${chatJid}`;
+    if (enabled) {
+        runtimeState.autoReplyChats[key] = true;
+    } else {
+        delete runtimeState.autoReplyChats[key];
+    }
+    saveRuntimeState();
 }
 
 function getSafeDelay(inputMs) {
@@ -116,21 +134,19 @@ function getSafeDelay(inputMs) {
 }
 
 // ─────────────────────────────────────────────
-//  GEMINI AI ENGINE (ONLY WHEN ENABLED OR !ai)
+//  GEMINI AI ENGINE (ALWAYS READY 24x7)
 // ─────────────────────────────────────────────
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
 async function generateMatchingLanguageReply(userText) {
-    if (!runtimeState.globalAutoReply || runtimeState.systemKilled) return null;
     try {
         const prompt =
             `You are SMW IOS, a helpful, natural, smart WhatsApp assistant. ` +
             `Detect the exact language or script of the user's message and reply in that SAME language (for example, Hindi in Devanagari if Hindi, Hinglish if Hinglish, English if English, Arabic if Arabic). ` +
             `Keep the reply helpful, clear, and concise in 1-2 lines.\n\nUser message: "${userText}"`;
         const res = await geminiModel.generateContent(prompt);
-        if (!runtimeState.globalAutoReply || runtimeState.systemKilled) return null;
         const text = res?.response?.text()?.trim();
         return text ? text.slice(0, 500) : null;
     } catch {
@@ -139,7 +155,6 @@ async function generateMatchingLanguageReply(userText) {
 }
 
 async function generateDirectAI(userPrompt) {
-    if (runtimeState.systemKilled) return 'System is stopped.';
     const prompt = `Answer clearly and concisely.\n\nPrompt: ${userPrompt}`;
     const res = await geminiModel.generateContent(prompt);
     return (res?.response?.text()?.trim() || 'No response generated.').slice(0, 1500);
@@ -150,26 +165,24 @@ async function generateDirectAI(userPrompt) {
 // ─────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT || 3000;
-let keepAliveTimer = null;
 
 app.get('/', (_req, res) => {
     res.status(200).json({
-        status: runtimeState.systemKilled ? 'stopped' : 'ok',
+        status: runtimeState.botPaused ? 'paused' : 'active',
         service: 'SMW IOS Manager',
         primaryNumber: CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : null,
-        globalAutoReply: Boolean(runtimeState.globalAutoReply),
-        systemKilled: Boolean(runtimeState.systemKilled),
+        botPaused: Boolean(runtimeState.botPaused),
+        activeAutoReplyChats: Object.keys(runtimeState.autoReplyChats).length,
         pingMinutes: PING_MINUTES,
         uptimeSec: Math.floor(process.uptime())
     });
 });
 
 app.get('/health', (_req, res) => {
-    res.status(200).send(runtimeState.systemKilled ? 'STOPPED' : 'OK');
+    res.status(200).send('OK');
 });
 
 function startKeepAlive() {
-    if (keepAliveTimer) clearInterval(keepAliveTimer);
     const intervalMs = PING_MINUTES * 60 * 1000;
     const pingUrl = process.env.RENDER_EXTERNAL_URL
         ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')}/health`
@@ -177,8 +190,7 @@ function startKeepAlive() {
 
     console.log(`[KEEP-ALIVE] Pinging every ${PING_MINUTES} minutes -> ${pingUrl}`);
 
-    keepAliveTimer = setInterval(async () => {
-        if (runtimeState.systemKilled) return;
+    setInterval(async () => {
         try {
             const resp = await fetch(pingUrl);
             console.log(`[KEEP-ALIVE] Status ${resp.status} at ${new Date().toISOString()}`);
@@ -186,13 +198,6 @@ function startKeepAlive() {
             console.log(`[KEEP-ALIVE] Retry failed: ${err.message}`);
         }
     }, intervalMs);
-}
-
-function stopKeepAlive() {
-    if (keepAliveTimer) {
-        clearInterval(keepAliveTimer);
-        keepAliveTimer = null;
-    }
 }
 
 // ─────────────────────────────────────────────
@@ -224,25 +229,25 @@ const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join(''
 // ─────────────────────────────────────────────
 //  MENUS
 // ─────────────────────────────────────────────
-const MENU_TEXT = () => `
+const MENU_TEXT = (chatAutoOn = false) => `
   ┌─────────────────────────────────────────┐
   │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
   ├─────────────────────────────────────────┤
-  │  ✨ Prefix     : ${PREFIX}                      │
-  │  🤖 AutoReply  : ${runtimeState.globalAutoReply ? 'ON (ALL CHATS)' : 'OFF'}          │
-  │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
+  │  ✨ Prefix      : ${PREFIX}                     │
+  │  ⚡ Bot Status  : ${runtimeState.botPaused ? 'PAUSED (SILENT)' : 'ACTIVE'}          │
+  │  🤖 Chat Reply  : ${chatAutoOn ? 'ON (THIS CHAT)' : 'OFF'}             │
   └─────────────────────────────────────────┘
 
   📂  *${g('CORE COMMAND MENUS')}*
 
   > 🤖  ${PREFIX}autoreply on / off
-         ↳ ${g('global auto reply across all chats')}
+         ↳ ${g('toggle auto reply only in this chat')}
 
   > 🎯  ${PREFIX}targetmenu
          ↳ ${g('custom speed name change and text loops')}
 
   > 🧠  ${PREFIX}ai [question]
-         ↳ ${g('direct gemini ai query')}
+         ↳ ${g('24x7 gemini ai query')}
 
   > 📱  ${PREFIX}addbot [number] | ${PREFIX}relink [number]
          ↳ ${g('link any country number with strict pairing')}
@@ -257,7 +262,8 @@ const MENU_TEXT = () => `
   │  ⚙️  *${g('SYSTEM CONTROLS')}*              │
   ├─────────────────────────────────────────┤
   │  👑  ${PREFIX}admin    ➔ ${g('Claim Owner')}    │
-  │  🛑  ${PREFIX}killall  ➔ ${g('Full Shutdown')}  │
+  │  ▶️  ${PREFIX}start    ➔ ${g('Resume Bot')}     │
+  │  🛑  ${PREFIX}killall  ➔ ${g('Silent Pause')}   │
   └─────────────────────────────────────────┘`;
 
 const TARGET_MENU = () => `
@@ -274,8 +280,9 @@ const TARGET_MENU = () => `
   💣  *${g('TEXT LOOPS')}*
   • ${PREFIX}txt [text] [ms]     • ${PREFIX}stoptxt
 
-  ⚡  *${g('FULL STOP')}*
-  • ${PREFIX}killall  ➔ ${g('Stop all loops, auto reply & whatsapp')}
+  ⚡  *${g('CONTROL')}*
+  • ${PREFIX}killall  ➔ ${g('Stop all loops & pause bot (keeps login alive)')}
+  • ${PREFIX}start    ➔ ${g('Wake up bot again')}
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 const GRP_MENU = () => `
@@ -361,7 +368,7 @@ class Session {
         this.lastAutoReplyAt = new Map();
 
         this.dedupeTimer = setInterval(() => {
-            if (this.stopped || runtimeState.systemKilled) return;
+            if (this.stopped) return;
             const now = Date.now();
             for (const [k, v] of this.processedMsgs) {
                 if (now - v > 90000) this.processedMsgs.delete(k);
@@ -402,26 +409,16 @@ class Session {
         this.txtLoop.clear();
     }
 
-    async closeSocketOnly(deleteAuth = false) {
+    async destroySession() {
         this.stopped = true;
         this.online = false;
         this.clearTimers();
         this.stopAllLoops();
         try {
-            if (this.socket?.ev?.removeAllListeners) {
-                this.socket.ev.removeAllListeners('connection.update');
-                this.socket.ev.removeAllListeners('messages.upsert');
-                this.socket.ev.removeAllListeners('creds.update');
-            }
-        } catch {}
-        try {
             if (this.socket?.ws?.close) this.socket.ws.close();
             if (this.socket?.end) this.socket.end(undefined);
         } catch {}
-        this.socket = null;
-        if (deleteAuth) {
-            removeDirSafe(this.getAuthDir());
-        }
+        removeDirSafe(this.getAuthDir());
     }
 
     dedupeLocal(msgId) {
@@ -432,7 +429,7 @@ class Session {
     }
 
     schedulePairingAttempt(sock, delayMs = 3500) {
-        if (this.stopped || runtimeState.systemKilled || !sock || this.online || this.codeRequested || this.pairInFlight) return;
+        if (this.stopped || !sock || this.online || this.codeRequested || this.pairInFlight) return;
         if (sock.authState?.creds?.registered) {
             this.codeRequested = true;
             return;
@@ -441,13 +438,13 @@ class Session {
 
         this.pairTimer = setTimeout(async () => {
             this.pairTimer = null;
-            if (this.stopped || runtimeState.systemKilled) return;
+            if (this.stopped) return;
             await this.requestPairStrict(sock);
         }, delayMs);
     }
 
     async requestPairStrict(sock) {
-        if (this.stopped || runtimeState.systemKilled || !sock || this.online || this.codeRequested || this.pairInFlight) return;
+        if (this.stopped || !sock || this.online || this.codeRequested || this.pairInFlight) return;
         const now = Date.now();
         if (now - this.lastPairAttemptAt < PAIR_COOLDOWN_MS) return;
 
@@ -482,7 +479,6 @@ class Session {
 
     async init() {
         try {
-            if (runtimeState.systemKilled) return;
             if (!this.phone) {
                 console.log(`[${this.id}] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use !addbot <number>.`);
                 return;
@@ -498,7 +494,7 @@ class Session {
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
             const { version } = await fetchLatestBaileysVersion();
 
-            if (this.stopped || runtimeState.systemKilled) return;
+            if (this.stopped) return;
 
             this.socket = makeWASocket({
                 auth: state,
@@ -518,7 +514,7 @@ class Session {
             }
 
             this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-                if (this.stopped || runtimeState.systemKilled) return;
+                if (this.stopped) return;
 
                 if (connection === "open") {
                     this.online = true;
@@ -537,7 +533,7 @@ class Session {
                         clearTimeout(this.pairTimer);
                         this.pairTimer = null;
                     }
-                    if (this.stopped || runtimeState.systemKilled) return;
+                    if (this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
@@ -547,7 +543,7 @@ class Session {
                     if (shouldReconnect) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped && !runtimeState.systemKilled) this.init();
+                            if (!this.stopped) this.init();
                         }, 5500);
                     }
                 }
@@ -561,7 +557,7 @@ class Session {
 
     async receive({ messages, type }) {
         try {
-            if (this.stopped || runtimeState.systemKilled) return;
+            if (this.stopped) return;
             if (type !== 'notify') return;
             const raw = messages[0];
             if (!raw?.message) return;
@@ -572,12 +568,6 @@ class Session {
 
             if (!this.dedupeLocal(raw.key.id)) return;
 
-            if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
-                try {
-                    await this.socket.readMessages([raw.key]);
-                } catch {}
-            }
-
             const body = (raw.message.conversation
                         || raw.message.extendedTextMessage?.text
                         || raw.message.imageMessage?.caption || '').trim();
@@ -587,21 +577,42 @@ class Session {
             const isOwn = isOwner(sender) || raw.key.fromMe;
             const allowed = isOwn || isSub(sender, chat);
 
+            // !start works even while bot is paused so you can wake it up anytime
+            if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
+                runtimeState.botPaused = false;
+                saveRuntimeState();
+                await this.send(chat, `${TAG}\n\n▶️ Bot is now *ACTIVE* again. Session was kept live.`);
+                return;
+            }
+
+            // !killall immediately stops all loops, disables auto-reply, and puts bot into silent pause WITHOUT logging out
+            if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
+                this.hub.pauseAllBotsWithoutLogout();
+                await this.send(chat, `${TAG}\n\n🛑 All loops and auto-replies stopped. Bot is now *PAUSED* (session stays logged in). Send *${PREFIX}start* to wake up.`);
+                return;
+            }
+
+            // While paused, bot stays completely silent while keeping WhatsApp session alive
+            if (runtimeState.botPaused) return;
+
+            if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
+                try {
+                    await this.socket.readMessages([raw.key]);
+                } catch {}
+            }
+
             const isCommandText = body.startsWith(PREFIX) || body.startsWith('+') || body.startsWith('-');
 
-            // Owner/authorized commands
             if (allowed) {
                 if (cmd === `${PREFIX}autoreply on` || cmd === '+autoreply on') {
-                    runtimeState.globalAutoReply = true;
-                    saveRuntimeState();
-                    await this.send(chat, `${TAG}\n\n✅ Global Auto Reply is now *ON* across all WhatsApp chats.`);
+                    setChatAutoReply(this.phone, chat, true);
+                    await this.send(chat, `${TAG}\n\n✅ Auto Reply is now *ON* for this chat only.`);
                     return;
                 }
 
                 if (cmd === `${PREFIX}autoreply off` || cmd === '+autoreply off') {
-                    runtimeState.globalAutoReply = false;
-                    saveRuntimeState();
-                    await this.send(chat, `${TAG}\n\n⛔ Global Auto Reply is now *OFF* across all WhatsApp chats.`);
+                    setChatAutoReply(this.phone, chat, false);
+                    await this.send(chat, `${TAG}\n\n⛔ Auto Reply is now *OFF* for this chat.`);
                     return;
                 }
 
@@ -650,16 +661,13 @@ class Session {
                     return;
                 }
 
-                if (cmd === `${PREFIX}menu` || cmd === '+menu') { await this.send(chat, MENU_TEXT()); return; }
+                if (cmd === `${PREFIX}menu` || cmd === '+menu') {
+                    await this.send(chat, MENU_TEXT(isChatAutoReplyOn(this.phone, chat)));
+                    return;
+                }
                 if (cmd === `${PREFIX}targetmenu`) { await this.send(chat, TARGET_MENU()); return; }
                 if (cmd === `${PREFIX}grpmenu`) { await this.send(chat, GRP_MENU()); return; }
                 if (cmd === `${PREFIX}games`) { await this.send(chat, GAMES_MENU()); return; }
-
-                if (cmd === `${PREFIX}killall` || cmd === '-all') {
-                    await this.send(chat, `${TAG}\n\n🛑 Full system shutdown initiated. Stopping loops, Gemini auto-reply, and WhatsApp sessions.`);
-                    await this.hub.shutdownEverything();
-                    return;
-                }
 
                 if (cmd === `${PREFIX}ancstop`) {
                     this.stopAllLoops();
@@ -733,10 +741,10 @@ class Session {
                 }
             }
 
-            // Global Auto-Reply across ALL WhatsApp chats ONLY when explicitly turned ON
+            // Per-chat Auto-Reply (Gemini is 24x7 ready, activates ONLY in chats where !autoreply on was run)
             if (
-                runtimeState.globalAutoReply &&
-                !runtimeState.systemKilled &&
+                !runtimeState.botPaused &&
+                isChatAutoReplyOn(this.phone, chat) &&
                 !raw.key.fromMe &&
                 body &&
                 !isCommandText
@@ -750,7 +758,7 @@ class Session {
                 if (Date.now() - lastTs >= FUN_REPLY_COOLDOWN_MS) {
                     this.lastAutoReplyAt.set(replyKey, Date.now());
                     const replyText = await generateMatchingLanguageReply(body);
-                    if (replyText && runtimeState.globalAutoReply && !runtimeState.systemKilled && !this.stopped) {
+                    if (replyText && !runtimeState.botPaused && isChatAutoReplyOn(this.phone, chat) && !this.stopped) {
                         await this.send(chat, replyText);
                     }
                 }
@@ -760,7 +768,7 @@ class Session {
     }
 
     async handle(cmd, payload, notify = true) {
-        if (this.stopped || runtimeState.systemKilled) return;
+        if (this.stopped || runtimeState.botPaused) return;
         const { chat } = payload;
         try {
             switch (cmd) {
@@ -782,7 +790,7 @@ class Session {
                     (async () => {
                         while (
                             !this.stopped &&
-                            !runtimeState.systemKilled &&
+                            !runtimeState.botPaused &&
                             stateObj.active &&
                             this.nameLoops.get(tid) === stateObj &&
                             stateObj.epoch === nextEpoch
@@ -799,7 +807,7 @@ class Session {
                             const step = 250;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
-                                if (this.stopped || runtimeState.systemKilled || !stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
+                                if (this.stopped || runtimeState.botPaused || !stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
                                 await delay(Math.min(step, safeDelay - elapsed));
                                 elapsed += step;
                             }
@@ -824,7 +832,7 @@ class Session {
                     (async () => {
                         while (
                             !this.stopped &&
-                            !runtimeState.systemKilled &&
+                            !runtimeState.botPaused &&
                             loopObj.active &&
                             this.txtLoop.get(txtKey) === loopObj &&
                             loopObj.epoch === nextEpoch
@@ -840,7 +848,7 @@ class Session {
                             const step = 250;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
-                                if (this.stopped || runtimeState.systemKilled || !loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
+                                if (this.stopped || runtimeState.botPaused || !loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
                                 await delay(Math.min(step, safeDelay - elapsed));
                                 elapsed += step;
                             }
@@ -855,7 +863,7 @@ class Session {
     }
 
     async send(jid, text) {
-        if (this.stopped || runtimeState.systemKilled || !this.socket || !this.online) return;
+        if (this.stopped || !this.socket || !this.online) return;
         try {
             await this.socket.sendMessage(jid, { text });
         } catch {}
@@ -863,7 +871,7 @@ class Session {
 }
 
 // ═════════════════════════════════════════════
-//  HUB INITIALIZATION & FULL SHUTDOWN
+//  HUB INITIALIZATION & SILENT PAUSE CONTROL
 // ═════════════════════════════════════════════
 class Hub {
     constructor() {
@@ -872,7 +880,6 @@ class Hub {
     }
 
     getPrimarySession() {
-        if (runtimeState.systemKilled) return null;
         if (CONFIGURED_BOT_NUMBER) {
             const mainSess = [...this.sessions.values()].find(
                 s => s.phone === CONFIGURED_BOT_NUMBER && s.online && !s.stopped
@@ -883,7 +890,6 @@ class Hub {
     }
 
     async deliverPairingCodeToOwner(codeMsg, requesterJid = null) {
-        if (runtimeState.systemKilled) return;
         const senderSession = this.getPrimarySession();
         if (!senderSession) return;
 
@@ -911,7 +917,6 @@ class Hub {
     }
 
     async addNumber(phone, requesterJid = null, forceFresh = false) {
-        if (runtimeState.systemKilled) return `⛔ System is stopped.`;
         const clean = normalizeStrictPhone(phone);
         if (!clean) return `❌ Invalid number.`;
 
@@ -921,7 +926,7 @@ class Hub {
                 return `⚠️ +${clean} is already in session list. Use ${PREFIX}relink ${clean} for a fresh code.`;
             }
             for (const [key, oldSess] of existingEntries) {
-                await oldSess.closeSocketOnly(true);
+                await oldSess.destroySession();
                 this.sessions.delete(key);
             }
         }
@@ -937,31 +942,24 @@ class Hub {
         return `${TAG}\n\n${forceFresh ? 'Fresh session started' : 'Added'} +${clean}. Pairing code will be sent to +${CONFIGURED_BOT_NUMBER || 'owner'}.`;
     }
 
-    async shutdownEverything() {
-        runtimeState.globalAutoReply = false;
-        runtimeState.systemKilled = true;
+    pauseAllBotsWithoutLogout() {
+        runtimeState.botPaused = true;
+        runtimeState.autoReplyChats = {};
         saveRuntimeState();
-        stopKeepAlive();
 
         for (const sess of this.sessions.values()) {
-            await sess.closeSocketOnly(false);
+            sess.stopAllLoops();
         }
-        this.sessions.clear();
-        console.log('[SHUTDOWN] All loops, auto-reply, Gemini engine, and WhatsApp sessions stopped.');
+        console.log('[PAUSE] All loops & auto-replies stopped. Sessions kept alive and logged in.');
     }
 
     async boot() {
-        if (runtimeState.systemKilled) {
-            console.log('[BOOT] System was stopped via killall.');
-            return;
-        }
         const numbers = this.loadSavedNumbers();
         if (numbers.length === 0) {
             console.log('[BOOT] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use !addbot <number>.');
             return;
         }
         for (const num of numbers) {
-            if (runtimeState.systemKilled) break;
             const id = String(this.counter++);
             const session = new Session(id, num, this, null, false);
             this.sessions.set(id, session);
@@ -975,7 +973,7 @@ console.log(`
 ◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Auto-Reply        : ${runtimeState.globalAutoReply ? 'ON' : 'OFF'}
+  Bot Mode          : ${runtimeState.botPaused ? 'PAUSED (SILENT)' : 'ACTIVE'}
   Port              : ${PORT}
   Safe Delay Floor  : ${MIN_SAFE_DELAY_MS}ms
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -988,8 +986,6 @@ const hub = new Hub();
 
 app.listen(PORT, async () => {
     console.log(`[SERVER] Listening on port ${PORT}`);
-    if (!runtimeState.systemKilled) {
-        startKeepAlive();
-        await hub.boot();
-    }
+    startKeepAlive();
+    await hub.boot();
 });
