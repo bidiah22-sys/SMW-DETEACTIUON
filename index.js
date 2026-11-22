@@ -28,11 +28,11 @@ const PING_MINUTES = 5;
 const MIN_SAFE_DELAY_MS = 1200;
 const DEFAULT_LOOP_MS   = 2500;
 
-// AUTO-READ, REACT & PER-CHAT AUTO-REPLY SETTINGS
-const AUTO_READ_MESSAGES     = true;
-const AUTO_REACT_EMOJI       = "⚡";
-const FUN_REPLY_COOLDOWN_MS  = 8000;
-const PAIR_COOLDOWN_MS       = 25000;
+// AUTO-READ, MULTI-REACTION & PER-CHAT AUTO-REPLY SETTINGS
+const AUTO_READ_MESSAGES    = true;
+const REACTION_POOL         = ["⚡", "🔥", "✨", "💫", "🎯", "👑", "🖤", "🙌", "🤝", "🚀", "💎", "🌟"];
+const AUTO_REPLY_COOLDOWN_MS = 2500;
+const PAIR_COOLDOWN_MS      = 35000;
 // =========================================================================
 
 function normalizeStrictPhone(rawInput) {
@@ -100,6 +100,10 @@ let timingMap  = readJson(PATH_TIMING, {
 });
 let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
 let PREFIX     = prefixData.prefix || '!';
+
+let GLOBAL_EPOCH = 1;
+const GLOBAL_ISSUED_CODES = new Set();
+
 let runtimeState = readJson(PATH_STATE, {
     botPaused: false,
     autoReplyChats: {}
@@ -114,6 +118,7 @@ function saveRuntimeState() {
 }
 
 function isChatAutoReplyOn(sessionPhone, chatJid) {
+    if (runtimeState.botPaused) return false;
     return Boolean(runtimeState.autoReplyChats[`${sessionPhone}::${chatJid}`]);
 }
 
@@ -133,31 +138,45 @@ function getSafeDelay(inputMs) {
     return Math.max(MIN_SAFE_DELAY_MS, parsed);
 }
 
+function pickRandomReaction() {
+    return REACTION_POOL[Math.floor(Math.random() * REACTION_POOL.length)];
+}
+
 // ─────────────────────────────────────────────
-//  GEMINI AI ENGINE (ALWAYS READY 24x7)
+//  GEMINI AI ENGINE (WITH API KEY & FALLBACKS)
 // ─────────────────────────────────────────────
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-const geminiModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+
+async function callGeminiWithFallback(promptText) {
+    for (const modelName of GEMINI_MODELS) {
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const res = await model.generateContent(promptText);
+            const text = res?.response?.text()?.trim();
+            if (text) return text;
+        } catch {}
+    }
+    return null;
+}
 
 async function generateMatchingLanguageReply(userText) {
-    try {
-        const prompt =
-            `You are SMW IOS, a helpful, natural, smart WhatsApp assistant. ` +
-            `Detect the exact language or script of the user's message and reply in that SAME language (for example, Hindi in Devanagari if Hindi, Hinglish if Hinglish, English if English, Arabic if Arabic). ` +
-            `Keep the reply helpful, clear, and concise in 1-2 lines.\n\nUser message: "${userText}"`;
-        const res = await geminiModel.generateContent(prompt);
-        const text = res?.response?.text()?.trim();
-        return text ? text.slice(0, 500) : null;
-    } catch {
-        return null;
-    }
+    const prompt =
+        `Act as a normal, friendly person chatting on WhatsApp. ` +
+        `Reply in the exact same language and script as the user's message (Hindi, Hinglish, English, etc.). ` +
+        `Keep it natural, helpful, and brief (1-3 lines).\n\n` +
+        `Message: ${userText}`;
+    const reply = await callGeminiWithFallback(prompt);
+    return reply ? reply.slice(0, 600) : null;
 }
 
 async function generateDirectAI(userPrompt) {
-    const prompt = `Answer clearly and concisely.\n\nPrompt: ${userPrompt}`;
-    const res = await geminiModel.generateContent(prompt);
-    return (res?.response?.text()?.trim() || 'No response generated.').slice(0, 1500);
+    const prompt =
+        `Reply naturally in the same language as the user's question. Be clear and helpful.\n\n` +
+        `Question: ${userPrompt}`;
+    const reply = await callGeminiWithFallback(prompt);
+    return (reply || 'Unable to respond right now. Please try again.').slice(0, 1500);
 }
 
 // ─────────────────────────────────────────────
@@ -171,8 +190,6 @@ app.get('/', (_req, res) => {
         status: runtimeState.botPaused ? 'paused' : 'active',
         service: 'SMW IOS Manager',
         primaryNumber: CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : null,
-        botPaused: Boolean(runtimeState.botPaused),
-        activeAutoReplyChats: Object.keys(runtimeState.autoReplyChats).length,
         pingMinutes: PING_MINUTES,
         uptimeSec: Math.floor(process.uptime())
     });
@@ -188,15 +205,10 @@ function startKeepAlive() {
         ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')}/health`
         : `http://127.0.0.1:${PORT}/health`;
 
-    console.log(`[KEEP-ALIVE] Pinging every ${PING_MINUTES} minutes -> ${pingUrl}`);
-
     setInterval(async () => {
         try {
-            const resp = await fetch(pingUrl);
-            console.log(`[KEEP-ALIVE] Status ${resp.status} at ${new Date().toISOString()}`);
-        } catch (err) {
-            console.log(`[KEEP-ALIVE] Retry failed: ${err.message}`);
-        }
+            await fetch(pingUrl);
+        } catch {}
     }, intervalMs);
 }
 
@@ -229,41 +241,40 @@ const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join(''
 // ─────────────────────────────────────────────
 //  MENUS
 // ─────────────────────────────────────────────
-const MENU_TEXT = (chatAutoOn = false) => `
+const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
   │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
   ├─────────────────────────────────────────┤
-  │  ✨ Prefix      : ${PREFIX}                     │
-  │  ⚡ Bot Status  : ${runtimeState.botPaused ? 'PAUSED (SILENT)' : 'ACTIVE'}          │
-  │  🤖 Chat Reply  : ${chatAutoOn ? 'ON (THIS CHAT)' : 'OFF'}             │
+  │  ✨ Prefix     : ${PREFIX}                      │
+  │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
   └─────────────────────────────────────────┘
 
   📂  *${g('CORE COMMAND MENUS')}*
 
   > 🤖  ${PREFIX}autoreply on / off
-         ↳ ${g('toggle auto reply only in this chat')}
+         ↳ ${g('chat reply and reactions')}
 
   > 🎯  ${PREFIX}targetmenu
-         ↳ ${g('custom speed name change and text loops')}
+         ↳ ${g('name change and text commands')}
 
   > 🧠  ${PREFIX}ai [question]
-         ↳ ${g('24x7 gemini ai query')}
+         ↳ ${g('ai assistant')}
 
   > 📱  ${PREFIX}addbot [number] | ${PREFIX}relink [number]
-         ↳ ${g('link any country number with strict pairing')}
+         ↳ ${g('link number')}
 
   > 👥  ${PREFIX}grpmenu
-         ↳ ${g('group moderation commands')}
+         ↳ ${g('group commands')}
 
   > 🎮  ${PREFIX}games
          ↳ ${g('utility commands')}
 
   ┌─────────────────────────────────────────┐
-  │  ⚙️  *${g('SYSTEM CONTROLS')}*              │
+  │  ⚙️  *${g('CONTROLS')}*                    │
   ├─────────────────────────────────────────┤
-  │  👑  ${PREFIX}admin    ➔ ${g('Claim Owner')}    │
-  │  ▶️  ${PREFIX}start    ➔ ${g('Resume Bot')}     │
-  │  🛑  ${PREFIX}killall  ➔ ${g('Silent Pause')}   │
+  │  👑  ${PREFIX}admin    ➔ ${g('Owner')}          │
+  │  ▶️  ${PREFIX}start    ➔ ${g('Start')}          │
+  │  🛑  ${PREFIX}killall  ➔ ${g('Stop')}           │
   └─────────────────────────────────────────┘`;
 
 const TARGET_MENU = () => `
@@ -274,15 +285,14 @@ const TARGET_MENU = () => `
   │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
   └─────────────────────────────────────────┘
 
-  🔥  *${g('NAME CHANGE LOOPS')}*
+  🔥  *${g('NAME COMMANDS')}*
   • ${PREFIX}anc1-7 [text] [ms]  • ${PREFIX}ancstop
 
-  💣  *${g('TEXT LOOPS')}*
+  💣  *${g('TEXT COMMANDS')}*
   • ${PREFIX}txt [text] [ms]     • ${PREFIX}stoptxt
 
-  ⚡  *${g('CONTROL')}*
-  • ${PREFIX}killall  ➔ ${g('Stop all loops & pause bot (keeps login alive)')}
-  • ${PREFIX}start    ➔ ${g('Wake up bot again')}
+  ⚡  *${g('CONTROLS')}*
+  • ${PREFIX}killall  • ${PREFIX}start
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 const GRP_MENU = () => `
@@ -312,9 +322,9 @@ const GAMES_MENU = () => `
 const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
 const win = what => `
   ┌─────────────────────────┐
-  │  ✨ ACTIVE              │
+  │  ✨ STARTED             │
   └─────────────────────────┘
-  ▶ ${g(what)} ${g('started.')}
+  ▶ ${g(what)}
   💗 *${TAG}*`;
 
 const saveUsers = () => writeJson(PATH_USERS, userData);
@@ -354,8 +364,9 @@ class Session {
         this.socket = null;
         this.online = false;
         this.self = null;
-        this.codeRequested = false;
-        this.pairInFlight = false;
+
+        this.pairingInProgress = false;
+        this.pairingDone = false;
         this.lastPairAttemptAt = 0;
         this.pairTimer = null;
         this.reconnectTimer = null;
@@ -363,6 +374,7 @@ class Session {
         this.stopped = false;
 
         this.processedMsgs = new Map();
+        this.sentByBotIds = new Set();
         this.nameLoops = new Map();
         this.txtLoop = new Map();
         this.lastAutoReplyAt = new Map();
@@ -372,6 +384,9 @@ class Session {
             const now = Date.now();
             for (const [k, v] of this.processedMsgs) {
                 if (now - v > 90000) this.processedMsgs.delete(k);
+            }
+            if (this.sentByBotIds.size > 500) {
+                this.sentByBotIds.clear();
             }
         }, 90000);
     }
@@ -407,6 +422,7 @@ class Session {
             entry.epoch += 1;
         }
         this.txtLoop.clear();
+        this.lastAutoReplyAt.clear();
     }
 
     async destroySession() {
@@ -415,73 +431,100 @@ class Session {
         this.clearTimers();
         this.stopAllLoops();
         try {
+            if (this.socket?.ev?.removeAllListeners) {
+                this.socket.ev.removeAllListeners('connection.update');
+                this.socket.ev.removeAllListeners('messages.upsert');
+                this.socket.ev.removeAllListeners('creds.update');
+            }
+        } catch {}
+        try {
             if (this.socket?.ws?.close) this.socket.ws.close();
             if (this.socket?.end) this.socket.end(undefined);
         } catch {}
+        this.socket = null;
         removeDirSafe(this.getAuthDir());
     }
 
     dedupeLocal(msgId) {
         if (!msgId) return true;
+        if (this.sentByBotIds.has(msgId)) return false;
         if (this.processedMsgs.has(msgId)) return false;
         this.processedMsgs.set(msgId, Date.now());
         return true;
     }
 
-    schedulePairingAttempt(sock, delayMs = 3500) {
-        if (this.stopped || !sock || this.online || this.codeRequested || this.pairInFlight) return;
+    triggerSingleCodeOnce(sock) {
+        if (
+            this.stopped ||
+            !sock ||
+            this.online ||
+            this.pairingDone ||
+            this.pairingInProgress ||
+            this.pairTimer
+        ) return;
+
         if (sock.authState?.creds?.registered) {
-            this.codeRequested = true;
+            this.pairingDone = true;
             return;
         }
-        if (this.pairTimer) return;
 
-        this.pairTimer = setTimeout(async () => {
-            this.pairTimer = null;
-            if (this.stopped) return;
-            await this.requestPairStrict(sock);
-        }, delayMs);
-    }
-
-    async requestPairStrict(sock) {
-        if (this.stopped || !sock || this.online || this.codeRequested || this.pairInFlight) return;
         const now = Date.now();
         if (now - this.lastPairAttemptAt < PAIR_COOLDOWN_MS) return;
 
-        this.pairInFlight = true;
-        this.lastPairAttemptAt = now;
-
-        try {
-            if (sock.authState?.creds?.registered) {
-                this.codeRequested = true;
+        this.pairingInProgress = true;
+        this.pairTimer = setTimeout(async () => {
+            this.pairTimer = null;
+            if (this.stopped || this.online || this.pairingDone) {
+                this.pairingInProgress = false;
                 return;
             }
-            const rawCode = await sock.requestPairingCode(this.phone);
-            const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-            if (!cleanCode) throw new Error('Empty pairing code returned');
+            this.lastPairAttemptAt = Date.now();
+            try {
+                if (sock.authState?.creds?.registered) {
+                    this.pairingDone = true;
+                    return;
+                }
+                const rawCode = await sock.requestPairingCode(this.phone);
+                const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (!cleanCode) throw new Error('Empty pairing code');
 
-            this.codeRequested = true;
-            const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
+                const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
+                const uniqueKey = `${this.phone}__${formatted}`;
+                if (GLOBAL_ISSUED_CODES.has(uniqueKey)) {
+                    this.pairingDone = true;
+                    return;
+                }
 
-            console.log(`\n========================================`);
-            console.log(`PAIRING CODE [${this.id}] (+${this.phone}): ${formatted}`);
-            console.log(`========================================\n`);
+                GLOBAL_ISSUED_CODES.add(uniqueKey);
+                this.pairingDone = true;
 
-            const codeMsg = `${TAG}\n\nPairing Code for +${this.phone}: *${formatted}*`;
-            await this.hub.deliverPairingCodeToOwner(codeMsg, this.requesterJid);
-        } catch (e) {
-            this.codeRequested = false;
-            console.log(`[${this.id}] Pairing code error (+${this.phone}):`, e.message);
-        } finally {
-            this.pairInFlight = false;
-        }
+                console.log(`\n========================================`);
+                console.log(`PAIRING CODE (+${this.phone}): ${formatted}`);
+                console.log(`========================================\n`);
+
+                const labelMsg = `${TAG}\n\nPairing code for +${this.phone}:`;
+                await this.hub.sendSingleCodeMessages(labelMsg, formatted, this.requesterJid);
+            } catch (e) {
+                this.pairingDone = false;
+                console.log(`[PAIR ERR] +${this.phone}:`, e.message);
+            } finally {
+                this.pairingInProgress = false;
+            }
+        }, 3500);
     }
 
     async init() {
         try {
-            if (!this.phone) {
-                console.log(`[${this.id}] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use !addbot <number>.`);
-                return;
+            if (!this.phone) return;
+
+            if (this.socket) {
+                try {
+                    this.socket.ev.removeAllListeners('connection.update');
+                    this.socket.ev.removeAllListeners('messages.upsert');
+                    this.socket.ev.removeAllListeners('creds.update');
+                    if (this.socket.ws?.close) this.socket.ws.close();
+                } catch {}
+                this.socket = null;
             }
 
             const authDir = this.getAuthDir();
@@ -509,38 +552,36 @@ class Session {
 
             this.socket.ev.on("creds.update", saveCreds);
 
-            if (!this.socket.authState?.creds?.registered && !this.codeRequested) {
-                this.schedulePairingAttempt(this.socket, 3500);
-            }
-
             this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped) return;
 
                 if (connection === "open") {
                     this.online = true;
-                    this.codeRequested = true;
+                    this.pairingDone = true;
+                    this.pairingInProgress = false;
                     if (this.pairTimer) {
                         clearTimeout(this.pairTimer);
                         this.pairTimer = null;
                     }
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
                     console.log(`[${this.id}] Connected: +${this.phone}`);
-                } else if (connection === "connecting" && !this.socket.authState.creds.registered && !this.codeRequested) {
-                    this.schedulePairingAttempt(this.socket, 3000);
+                } else if (connection === "connecting" && !this.socket.authState?.creds?.registered && !this.pairingDone) {
+                    this.triggerSingleCodeOnce(this.socket);
                 } else if (connection === "close") {
                     this.online = false;
                     if (this.pairTimer) {
                         clearTimeout(this.pairTimer);
                         this.pairTimer = null;
                     }
+                    this.pairingInProgress = false;
                     if (this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
-                        this.codeRequested = false;
+                        this.pairingDone = false;
                     }
                     const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                    if (shouldReconnect) {
+                    if (shouldReconnect && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped) this.init();
@@ -577,22 +618,18 @@ class Session {
             const isOwn = isOwner(sender) || raw.key.fromMe;
             const allowed = isOwn || isSub(sender, chat);
 
-            // !start works even while bot is paused so you can wake it up anytime
             if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
-                runtimeState.botPaused = false;
-                saveRuntimeState();
-                await this.send(chat, `${TAG}\n\n▶️ Bot is now *ACTIVE* again. Session was kept live.`);
+                this.hub.resumeAllBots();
+                await this.send(chat, `${TAG}\n\n✅ Started.`);
                 return;
             }
 
-            // !killall immediately stops all loops, disables auto-reply, and puts bot into silent pause WITHOUT logging out
             if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
                 this.hub.pauseAllBotsWithoutLogout();
-                await this.send(chat, `${TAG}\n\n🛑 All loops and auto-replies stopped. Bot is now *PAUSED* (session stays logged in). Send *${PREFIX}start* to wake up.`);
+                await this.send(chat, `${TAG}\n\n🛑 Stopped.`);
                 return;
             }
 
-            // While paused, bot stays completely silent while keeping WhatsApp session alive
             if (runtimeState.botPaused) return;
 
             if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
@@ -606,13 +643,13 @@ class Session {
             if (allowed) {
                 if (cmd === `${PREFIX}autoreply on` || cmd === '+autoreply on') {
                     setChatAutoReply(this.phone, chat, true);
-                    await this.send(chat, `${TAG}\n\n✅ Auto Reply is now *ON* for this chat only.`);
+                    await this.send(chat, `${TAG}\n\n✅ Auto reply enabled.`);
                     return;
                 }
 
                 if (cmd === `${PREFIX}autoreply off` || cmd === '+autoreply off') {
                     setChatAutoReply(this.phone, chat, false);
-                    await this.send(chat, `${TAG}\n\n⛔ Auto Reply is now *OFF* for this chat.`);
+                    await this.send(chat, `${TAG}\n\n⛔ Auto reply disabled.`);
                     return;
                 }
 
@@ -630,7 +667,7 @@ class Session {
                     const rawNum = body.slice(cmd.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
                     const cleanNum = normalizeStrictPhone(rawNum);
                     if (!cleanNum) {
-                        await this.send(chat, `❌ Provide a valid country code + number (digits only, no leading 0).`);
+                        await this.send(chat, `❌ Enter a valid number with country code.`);
                         return;
                     }
                     const statusMsg = await this.hub.addNumber(cleanNum, chat, false);
@@ -642,7 +679,7 @@ class Session {
                     const rawNum = body.slice(cmd.startsWith(`${PREFIX}relink `) ? PREFIX.length + 8 : 8).trim();
                     const cleanNum = normalizeStrictPhone(rawNum);
                     if (!cleanNum) {
-                        await this.send(chat, `❌ Provide a valid country code + number to relink.`);
+                        await this.send(chat, `❌ Enter a valid number with country code.`);
                         return;
                     }
                     const statusMsg = await this.hub.addNumber(cleanNum, chat, true);
@@ -653,16 +690,16 @@ class Session {
                 if (cmd === `${PREFIX}bots` || cmd === '+bots') {
                     const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
                     if (list.length === 0) {
-                        await this.send(chat, `${TAG}\n\nNo numbers configured yet.`);
+                        await this.send(chat, `${TAG}\n\nNo numbers added.`);
                         return;
                     }
-                    const lines = list.map((s, idx) => `${idx + 1}. +${s.phone} — ${s.online ? 'Online' : 'Pending/Offline'}`);
-                    await this.send(chat, `${TAG}\n\nSessions (${list.length}):\n\n${lines.join('\n')}`);
+                    const lines = list.map((s, idx) => `${idx + 1}. +${s.phone} — ${s.online ? 'Connected' : 'Waiting'}`);
+                    await this.send(chat, `${TAG}\n\n${lines.join('\n')}`);
                     return;
                 }
 
                 if (cmd === `${PREFIX}menu` || cmd === '+menu') {
-                    await this.send(chat, MENU_TEXT(isChatAutoReplyOn(this.phone, chat)));
+                    await this.send(chat, MENU_TEXT());
                     return;
                 }
                 if (cmd === `${PREFIX}targetmenu`) { await this.send(chat, TARGET_MENU()); return; }
@@ -671,13 +708,13 @@ class Session {
 
                 if (cmd === `${PREFIX}ancstop`) {
                     this.stopAllLoops();
-                    await this.send(chat, `${TAG}\n\n🛑 Name change loops stopped.`);
+                    await this.send(chat, `${TAG}\n\n🛑 Stopped.`);
                     return;
                 }
 
                 if (cmd === `${PREFIX}stoptxt`) {
                     this.stopAllLoops();
-                    await this.send(chat, `${TAG}\n\n🛑 Text loops stopped.`);
+                    await this.send(chat, `${TAG}\n\n🛑 Stopped.`);
                     return;
                 }
 
@@ -687,11 +724,10 @@ class Session {
                         await this.send(chat, `❌ Usage: ${PREFIX}ai <question>`);
                         return;
                     }
-                    try {
-                        const reply = await generateDirectAI(prompt);
+                    const reqEpoch = GLOBAL_EPOCH;
+                    const reply = await generateDirectAI(prompt);
+                    if (!runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH) {
                         await this.send(chat, reply);
-                    } catch (e) {
-                        await this.send(chat, `❌ AI error: ${e.message}`);
                     }
                     return;
                 }
@@ -741,7 +777,7 @@ class Session {
                 }
             }
 
-            // Per-chat Auto-Reply (Gemini is 24x7 ready, activates ONLY in chats where !autoreply on was run)
+            // Per-chat Auto-Reply: varied reactions + matching-language Gemini reply ONLY when ON
             if (
                 !runtimeState.botPaused &&
                 isChatAutoReplyOn(this.phone, chat) &&
@@ -749,17 +785,24 @@ class Session {
                 body &&
                 !isCommandText
             ) {
+                const reqEpoch = GLOBAL_EPOCH;
                 try {
-                    await this.socket.sendMessage(chat, { react: { text: AUTO_REACT_EMOJI, key: raw.key } });
+                    await this.socket.sendMessage(chat, { react: { text: pickRandomReaction(), key: raw.key } });
                 } catch {}
 
                 const replyKey = `${chat}__${sender}`;
                 const lastTs = this.lastAutoReplyAt.get(replyKey) || 0;
-                if (Date.now() - lastTs >= FUN_REPLY_COOLDOWN_MS) {
+                if (Date.now() - lastTs >= AUTO_REPLY_COOLDOWN_MS) {
                     this.lastAutoReplyAt.set(replyKey, Date.now());
                     const replyText = await generateMatchingLanguageReply(body);
-                    if (replyText && !runtimeState.botPaused && isChatAutoReplyOn(this.phone, chat) && !this.stopped) {
-                        await this.send(chat, replyText);
+                    if (
+                        replyText &&
+                        !runtimeState.botPaused &&
+                        reqEpoch === GLOBAL_EPOCH &&
+                        isChatAutoReplyOn(this.phone, chat) &&
+                        !this.stopped
+                    ) {
+                        await this.sendQuoted(chat, replyText, raw);
                     }
                 }
             }
@@ -770,6 +813,7 @@ class Session {
     async handle(cmd, payload, notify = true) {
         if (this.stopped || runtimeState.botPaused) return;
         const { chat } = payload;
+        const startEpoch = GLOBAL_EPOCH;
         try {
             switch (cmd) {
                 case 'nc_start': {
@@ -791,6 +835,7 @@ class Session {
                         while (
                             !this.stopped &&
                             !runtimeState.botPaused &&
+                            startEpoch === GLOBAL_EPOCH &&
                             stateObj.active &&
                             this.nameLoops.get(tid) === stateObj &&
                             stateObj.epoch === nextEpoch
@@ -807,7 +852,13 @@ class Session {
                             const step = 250;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
-                                if (this.stopped || runtimeState.botPaused || !stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
+                                if (
+                                    this.stopped ||
+                                    runtimeState.botPaused ||
+                                    startEpoch !== GLOBAL_EPOCH ||
+                                    !stateObj.active ||
+                                    this.nameLoops.get(tid) !== stateObj
+                                ) return;
                                 await delay(Math.min(step, safeDelay - elapsed));
                                 elapsed += step;
                             }
@@ -833,6 +884,7 @@ class Session {
                         while (
                             !this.stopped &&
                             !runtimeState.botPaused &&
+                            startEpoch === GLOBAL_EPOCH &&
                             loopObj.active &&
                             this.txtLoop.get(txtKey) === loopObj &&
                             loopObj.epoch === nextEpoch
@@ -842,13 +894,20 @@ class Session {
                                 continue;
                             }
                             try {
-                                await this.socket.sendMessage(chat, { text: txt });
+                                const sent = await this.socket.sendMessage(chat, { text: txt });
+                                if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
                             } catch {}
 
                             const step = 250;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
-                                if (this.stopped || runtimeState.botPaused || !loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
+                                if (
+                                    this.stopped ||
+                                    runtimeState.botPaused ||
+                                    startEpoch !== GLOBAL_EPOCH ||
+                                    !loopObj.active ||
+                                    this.txtLoop.get(txtKey) !== loopObj
+                                ) return;
                                 await delay(Math.min(step, safeDelay - elapsed));
                                 elapsed += step;
                             }
@@ -865,7 +924,16 @@ class Session {
     async send(jid, text) {
         if (this.stopped || !this.socket || !this.online) return;
         try {
-            await this.socket.sendMessage(jid, { text });
+            const sent = await this.socket.sendMessage(jid, { text });
+            if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
+        } catch {}
+    }
+
+    async sendQuoted(jid, text, quotedMsg) {
+        if (this.stopped || !this.socket || !this.online) return;
+        try {
+            const sent = await this.socket.sendMessage(jid, { text }, { quoted: quotedMsg });
+            if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
         } catch {}
     }
 }
@@ -889,16 +957,20 @@ class Hub {
         return [...this.sessions.values()].find(s => s.online && !s.stopped) || null;
     }
 
-    async deliverPairingCodeToOwner(codeMsg, requesterJid = null) {
+    async sendSingleCodeMessages(labelMsg, cleanCodeOnly, requesterJid = null) {
         const senderSession = this.getPrimarySession();
         if (!senderSession) return;
 
         if (PRIMARY_OWNER_JID) {
-            await senderSession.send(PRIMARY_OWNER_JID, codeMsg);
+            await senderSession.send(PRIMARY_OWNER_JID, labelMsg);
+            await delay(400);
+            await senderSession.send(PRIMARY_OWNER_JID, cleanCodeOnly);
         }
 
         if (requesterJid && requesterJid !== PRIMARY_OWNER_JID) {
-            await senderSession.send(requesterJid, codeMsg);
+            await senderSession.send(requesterJid, labelMsg);
+            await delay(400);
+            await senderSession.send(requesterJid, cleanCodeOnly);
         }
     }
 
@@ -923,7 +995,7 @@ class Hub {
         const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
         if (existingEntries.length > 0) {
             if (!forceFresh) {
-                return `⚠️ +${clean} is already in session list. Use ${PREFIX}relink ${clean} for a fresh code.`;
+                return `⚠️ +${clean} already exists. Use ${PREFIX}relink ${clean} for a new code.`;
             }
             for (const [key, oldSess] of existingEntries) {
                 await oldSess.destroySession();
@@ -939,10 +1011,11 @@ class Hub {
         this.saveNumbers(allNums);
 
         await session.init();
-        return `${TAG}\n\n${forceFresh ? 'Fresh session started' : 'Added'} +${clean}. Pairing code will be sent to +${CONFIGURED_BOT_NUMBER || 'owner'}.`;
+        return `${TAG}\n\nPairing requested for +${clean}.`;
     }
 
     pauseAllBotsWithoutLogout() {
+        GLOBAL_EPOCH += 1;
         runtimeState.botPaused = true;
         runtimeState.autoReplyChats = {};
         saveRuntimeState();
@@ -950,15 +1023,17 @@ class Hub {
         for (const sess of this.sessions.values()) {
             sess.stopAllLoops();
         }
-        console.log('[PAUSE] All loops & auto-replies stopped. Sessions kept alive and logged in.');
+    }
+
+    resumeAllBots() {
+        GLOBAL_EPOCH += 1;
+        runtimeState.botPaused = false;
+        saveRuntimeState();
     }
 
     async boot() {
         const numbers = this.loadSavedNumbers();
-        if (numbers.length === 0) {
-            console.log('[BOOT] BOT_NUMBER is empty. Set BOT_NUMBER at the top or use !addbot <number>.');
-            return;
-        }
+        if (numbers.length === 0) return;
         for (const num of numbers) {
             const id = String(this.counter++);
             const session = new Session(id, num, this, null, false);
@@ -973,7 +1048,6 @@ console.log(`
 ◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Bot Mode          : ${runtimeState.botPaused ? 'PAUSED (SILENT)' : 'ACTIVE'}
   Port              : ${PORT}
   Safe Delay Floor  : ${MIN_SAFE_DELAY_MS}ms
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
