@@ -19,7 +19,7 @@ import express from 'express';
 // =========================================================================
 // PRIMARY BOT / OWNER NUMBER (WITH OR WITHOUT '+')
 // =========================================================================
-const BOT_NUMBER = "+9647882064284";
+const BOT_NUMBER = "+917488917344";
 
 // RENDER KEEP-ALIVE INTERVAL IN MINUTES
 const PING_MINUTES = 5;
