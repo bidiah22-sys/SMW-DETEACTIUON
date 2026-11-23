@@ -8,7 +8,8 @@ import makeWASocket, {
     DisconnectReason,
     delay,
     fetchLatestBaileysVersion,
-    Browsers
+    Browsers,
+    extractMessageContent
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
@@ -33,12 +34,10 @@ const AUTO_REPLY_COOLDOWN_MS = 2000;
 const PAIR_COOLDOWN_MS       = 35000;
 // =========================================================================
 
-// MASSIVE DYNAMIC EMOJI REACTION ENGINE (500+ VARIED EMOJIS)
 const RAW_EMOJI_STRING =
     "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃" +
     "😺😸😹😻😼😽🙀😿😾💋💌💘💝💖💗💓💞💕💟❣️💔❤️‍🔥❤️‍🩹❤️🩷🧡💛💚💙🩵💜🤎🖤🩶🤍💯💢💥💫💦💨🕳️💬👁️‍🗨️🗨️🗯️💭💤" +
     "👋🤚🖐️✋🖖🫱🫲🫳🫴🫷🫸👌🤌🤏✌️🤞🫰🤟🤘🤙👈👉👆🖕👇☝️🫵👍👎✊👊🤛🤜👏🙌🫶👐🤲🤝🙏✍️💅🤳💪🦾🦿🦵🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄🫦" +
-    "👶🧒👦👧🧑👱👨🧔👨‍🦰👨‍🦱👨‍🦳👨‍🦲👩👩‍🦰🧑‍🦰👩‍🦱🧑‍🦱👩‍🦳🧑‍🦳👩‍🦲🧑‍🦲👱‍♀️👱‍♂️🧓👴👵🙍🙍‍♂️🙍‍♀️🙎🙎‍♂️🙎‍♀️🙅🙅‍♂️🙅‍♀️🙆🙆‍♂️🙆‍♀️💁💁‍♂️💁‍♀️🙋🙋‍♂️🙋‍♀️🧏🧏‍♂️🧏‍♀️🙇🙇‍♂️🙇‍♀️🤦🤦‍♂️🤦‍♀️🤷🤷‍♂️🤷‍♀️" +
     "🐵🐒🦍🦧🐶🐕🦮🐕‍🦺🐩🐺🦊🦝🐱🐈🐈‍⬛🦁🐯🐅🐆🐴🫎🫏🐎🦄🦓🦌🦬🐮🐂🐃🐄🐷🐖🐗🐽🐏🐑🐐🐪🐫🦙🦒🐘🦣🦏🦛🐭🐁🐀🐹🐰🐇🐿️🦫🦔🦇🐻🐻‍❄️🐨🐼🦥🦦🦨🦘🦡🐾🦃🐔🐓🐣🐤🐥🐦🐧🕊️🦅🦆🦢🦉🦤🪶🦩🦚🦜🪽🐦‍⬛🪿🐸🐊🐢🦎🐍🐲🐉🦕🦖🐳🐋🐬🦭🐟🐠🐡🦈🐙🐚🪸🪼🐌🦋🐛🐜🐝🪲🐞🦗🪳🕷️🕸️🦂🦟🪰🪱🦠" +
     "💐🌸💮🪷🏵️🌹🥀🌺🌻🌼🌷🪻🌱🪴🌲🌳🌴🌵🌾🌿☘️🍀🍁🍂🍃🪹🪺🍄🍇🍈🍉🍊🍋🍌🍍🥭🍎🍏🍐🍑🍒🍓🫐🥝🍅🫒🥥🥑🍆🥔🥕🌽🌶️🫑🥒🥬🥦🧄🧅🥜🫘🌰🫚🫛🍞🥐🥖🫓🥨🥯🥞🧇🧀🍖🍗🥩🥓🍔🍟🍕🌭🥪🌮🌯🫔🥙🧆🥚🍳🥘🍲🫕🥣🥗🍿🧈🧂🥫🍱🍘🍙🍚🍛🍜🍝🍠🍢🍣🍤🍥🥮🍡🥟🥠🥡🦀🦞🦐🦑🦪🍦🍧🍨🍩🍪🎂🍰🧁🥧🍫🍬🍭🍮🍯🍼🥛☕🫖🍵🍶🍾🍷🍸🍹🍺🍻🥂🥃🫗🥤🧋🧃🧉🧊" +
     "🌍🌎🌏🌐🗺️🧭🏔️⛰️🌋🗻🏕️🏖️🏜️🏝️🏞️🏟️🏛️🏗️🧱🪨🪵🛖🏘️🏚️🏠🏡🏢🏣🏤🏥🏦🏨🏩🏪🏫🏬🏭🏯🏰💒🗼🗽⛪🕌🛕🕍⛩️🕋⛲⛺🌁🌃🏙️🌄🌅🌆🌇🌉♨️🎠🛝🎡🎢💈🎪🚂🚃🚄🚅🚆🚇🚈🚉🚊🚝🚞🚋🚌🚍🚎🚐🚑🚒🚓🚔🚕🚖🚗🚘🚙🛻🚚🚛🚜🏎️🏍️🛵🦽🦼🛺🚲🛴🛹🛼🚏🛣️🛤️🛢️⛽🛞🚨🚥🚦🛑🚧⚓🛟⛵🛶🚤🛳️⛴️🛥️🚢✈️🛩️🛫🛬🪂💺🚁🚟🚠🚡🛰️🚀🛸" +
@@ -86,10 +85,6 @@ const PATH_STATE  = './store/state.json';
 try {
     fs.mkdirSync('./store', { recursive: true });
     fs.mkdirSync('./sessions', { recursive: true });
-    if (!fs.existsSync('./store/cookies.txt')) {
-        const b64 = "IyBOZXRzY2FwZSmvQ29va2llIEZpbGUh";
-        fs.writeFileSync('./store/cookies.txt', Buffer.from(b64, 'base64').toString('utf8'));
-    }
 } catch {}
 
 function removeDirSafe(dirPath) {
@@ -181,7 +176,7 @@ function getSafeDelay(inputMs) {
 }
 
 // ─────────────────────────────────────────────
-//  GEMINI AI ENGINE (WITH API KEY, TIMEOUT GUARD & FALLBACKS)
+//  GEMINI AI ENGINE (WITH TIMEOUT GUARD & FALLBACKS)
 // ─────────────────────────────────────────────
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
@@ -296,7 +291,7 @@ const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join(''
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v10  🚩      │
+  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v11  🚩      │
   ├─────────────────────────────────────────┤
   │  ✨ Prefix     : ${PREFIX}                      │
   │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
@@ -313,8 +308,8 @@ const MENU_TEXT = () => `
   > 🧠  ${PREFIX}ai [question]
          ↳ ${g('ai assistant')}
 
-  > 📱  ${PREFIX}addbot [number] | ${PREFIX}relink [number]
-         ↳ ${g('link number')}
+  > 📱  ${PREFIX}addbot [number] | ${PREFIX}relink [number] | ${PREFIX}bots
+         ↳ ${g('link or view numbers')}
 
   > 👥  ${PREFIX}grpmenu
          ↳ ${g('group commands')}
@@ -369,7 +364,7 @@ const GAMES_MENU = () => `
   └─────────────────────────────────────────┘
 
   🎮  *${g('UTILITIES')}*
-  • ${PREFIX}flip  • ${PREFIX}roll  • ${PREFIX}rps
+  • ${PREFIX}flip  • ${PREFIX}roll  • ${PREFIX}rps [rock/paper/scissors]
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
@@ -382,11 +377,12 @@ const win = what => `
 
 const saveUsers = () => writeJson(PATH_USERS, userData);
 
-const isOwner = (j, sessionSelf = null) => {
+const isOwner = (j, sessionSelf = null, sessionLid = null) => {
     if (!j) return false;
     const cleanJid = String(j).split('@')[0].split(':')[0];
     if (!cleanJid) return false;
     if (sessionSelf && String(sessionSelf).split('@')[0].split(':')[0] === cleanJid) return true;
+    if (sessionLid && String(sessionLid).split('@')[0].split(':')[0] === cleanJid) return true;
     return userData.owners.some(o => String(o).split('@')[0].split(':')[0] === cleanJid) ||
            ADMIN_NUMBERS.some(num => num && num.includes(cleanJid));
 };
@@ -406,6 +402,31 @@ const SET_KEYS = {
     anc5: 'sky', anc6: 'animals', anc7: 'fruits'
 };
 
+function extractTextFromMessage(rawMsg) {
+    const content = extractMessageContent(rawMsg) || rawMsg;
+    if (!content) return '';
+    return (
+        content.conversation ||
+        content.extendedTextMessage?.text ||
+        content.imageMessage?.caption ||
+        content.videoMessage?.caption ||
+        content.documentMessage?.caption ||
+        content.buttonsResponseMessage?.selectedDisplayText ||
+        content.listResponseMessage?.title ||
+        ''
+    ).trim();
+}
+
+function getTargetUsers(raw, content, argsText) {
+    const mentioned = content?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+    if (mentioned.length > 0) return mentioned;
+    const participant = content?.extendedTextMessage?.contextInfo?.participant;
+    if (participant) return [participant];
+    const num = normalizeStrictPhone(argsText);
+    if (num) return [`${num}@s.whatsapp.net`];
+    return [];
+}
+
 // ═════════════════════════════════════════════
 //  SESSION MANAGER (STRICTLY ISOLATED PER NUMBER)
 // ═════════════════════════════════════════════
@@ -419,6 +440,7 @@ class Session {
         this.socket = null;
         this.online = false;
         this.self = null;
+        this.selfLid = null;
 
         this.pairingInProgress = false;
         this.pairingDone = false;
@@ -619,6 +641,9 @@ class Session {
                         this.pairTimer = null;
                     }
                     this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
+                    if (this.socket.user.lid) {
+                        this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
+                    }
                     console.log(`[${this.id}] Connected: +${this.phone}`);
                 } else if (connection === "connecting" && !this.socket.authState?.creds?.registered && !this.pairingDone) {
                     this.triggerSingleCodeOnce(this.socket);
@@ -658,7 +683,7 @@ class Session {
     async receive({ messages, type }) {
         try {
             if (this.stopped) return;
-            if (type !== 'notify' || !Array.isArray(messages)) return;
+            if ((type !== 'notify' && type !== 'append') || !Array.isArray(messages)) return;
 
             for (const raw of messages) {
                 if (!raw?.message || !raw?.key?.remoteJid) continue;
@@ -666,19 +691,18 @@ class Session {
                 const chat = raw.key.remoteJid;
                 if (chat === 'status@broadcast') continue;
 
-                const isGroup = chat.endsWith('@g.us');
-                const sender = raw.key.participant || chat;
-
                 if (!this.dedupeLocal(raw.key.id)) continue;
 
-                const body = (raw.message.conversation
-                            || raw.message.extendedTextMessage?.text
-                            || raw.message.imageMessage?.caption
-                            || raw.message.videoMessage?.caption || '').trim();
+                const content = extractMessageContent(raw.message) || raw.message;
+                const body = extractTextFromMessage(raw.message);
+                if (!body) continue;
+
+                const isGroup = chat.endsWith('@g.us');
+                const sender = raw.key.participant || raw.participant || chat;
                 const cmd = body.toLowerCase();
 
                 const isDM = !isGroup;
-                const isOwn = isOwner(sender, this.self) || Boolean(raw.key.fromMe);
+                const isOwn = isOwner(sender, this.self, this.selfLid) || Boolean(raw.key.fromMe);
                 const allowed = isOwn || isSub(sender, chat);
 
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
@@ -704,6 +728,7 @@ class Session {
                 const isCommandText = body.startsWith(PREFIX) || body.startsWith('+') || body.startsWith('-');
 
                 if (allowed && isCommandText) {
+                    // ── Auto Reply Toggle ──
                     if (cmd === `${PREFIX}autoreply on` || cmd === '+autoreply on') {
                         setChatAutoReply(this.phone, chat, true);
                         await this.send(chat, `${TAG}\n\n✅ Auto reply enabled.`);
@@ -716,6 +741,7 @@ class Session {
                         continue;
                     }
 
+                    // ── Owner Claim ──
                     if (isDM && (cmd === `${PREFIX}admin` || cmd === '+admin')) {
                         if (!userData.owners.length) {
                             grantOwner(sender);
@@ -726,6 +752,7 @@ class Session {
                         continue;
                     }
 
+                    // ── Add / Relink / List Bots ──
                     if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ')) {
                         const rawNum = body.slice(cmd.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
@@ -761,6 +788,7 @@ class Session {
                         continue;
                     }
 
+                    // ── Menus ──
                     if (cmd === `${PREFIX}menu` || cmd === '+menu') {
                         await this.send(chat, MENU_TEXT());
                         continue;
@@ -769,12 +797,114 @@ class Session {
                     if (cmd === `${PREFIX}grpmenu`) { await this.send(chat, GRP_MENU()); continue; }
                     if (cmd === `${PREFIX}games`) { await this.send(chat, GAMES_MENU()); continue; }
 
+                    // ── Group Moderation Commands ──
+                    if (cmd === `${PREFIX}lockgc`) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        try {
+                            await this.socket.groupSettingUpdate(chat, 'announcement');
+                            await this.send(chat, `${TAG}\n\n🔒 Group locked.`);
+                        } catch (e) {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}unlockgc`) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        try {
+                            await this.socket.groupSettingUpdate(chat, 'not_announcement');
+                            await this.send(chat, `${TAG}\n\n🔓 Group unlocked.`);
+                        } catch (e) {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}promote`)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 7).trim());
+                        if (!targets.length) { await this.send(chat, `❌ Tag or reply to a user.`); continue; }
+                        try {
+                            await this.socket.groupParticipantsUpdate(chat, targets, 'promote');
+                            await this.send(chat, `${TAG}\n\n👑 Promoted.`);
+                        } catch {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}demote`)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
+                        if (!targets.length) { await this.send(chat, `❌ Tag or reply to a user.`); continue; }
+                        try {
+                            await this.socket.groupParticipantsUpdate(chat, targets, 'demote');
+                            await this.send(chat, `${TAG}\n\n⬇️ Demoted.`);
+                        } catch {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}mute`)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
+                        if (!targets.length) { await this.send(chat, `❌ Tag or reply to a user.`); continue; }
+                        try {
+                            await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
+                            await this.send(chat, `${TAG}\n\n🔇 Removed from group.`);
+                        } catch {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}unmute`)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
+                        if (!targets.length) { await this.send(chat, `❌ Enter number to add.`); continue; }
+                        try {
+                            await this.socket.groupParticipantsUpdate(chat, targets, 'add');
+                            await this.send(chat, `${TAG}\n\n🔊 Added back to group.`);
+                        } catch {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    // ── Games & Utility Commands ──
+                    if (cmd === `${PREFIX}flip`) {
+                        const side = Math.random() < 0.5 ? '🪙 Heads' : '🪙 Tails';
+                        await this.send(chat, `${TAG}\n\n${side}`);
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}roll`) {
+                        const num = Math.floor(Math.random() * 6) + 1;
+                        await this.send(chat, `${TAG}\n\n🎲 Rolled: *${num}*`);
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}rps` || cmd.startsWith(`${PREFIX}rps `)) {
+                        const choices = ['rock', 'paper', 'scissors'];
+                        const botPick = choices[Math.floor(Math.random() * choices.length)];
+                        const userPick = body.slice(PREFIX.length + 3).trim().toLowerCase();
+                        if (!userPick) {
+                            await this.send(chat, `${TAG}\n\n🎮 Bot picked: *${botPick.toUpperCase()}*`);
+                        } else {
+                            await this.send(chat, `${TAG}\n\nYou: *${userPick}* | Bot: *${botPick}*`);
+                        }
+                        continue;
+                    }
+
+                    // ── Loop Stop Commands ──
                     if (cmd === `${PREFIX}ancstop` || cmd === `${PREFIX}stoptxt`) {
                         this.stopAllLoops();
                         await this.send(chat, `${TAG}\n\n🛑 Stopped.`);
                         continue;
                     }
 
+                    // ── Direct AI Query ──
                     if (cmd.startsWith('+ai ') || cmd.startsWith(`${PREFIX}ai `)) {
                         const prompt = body.slice(body.startsWith('+ai ') ? 4 : PREFIX.length + 3).trim();
                         if (!prompt) {
@@ -789,6 +919,7 @@ class Session {
                         continue;
                     }
 
+                    // ── Text Loop ──
                     if (cmd.startsWith(`${PREFIX}txt `)) {
                         const parts = body.slice(PREFIX.length + 4).trim().split(/\s+/);
                         const lastToken = parts[parts.length - 1];
@@ -807,12 +938,16 @@ class Session {
                         continue;
                     }
 
+                    // ── Group Subject Name Loops ──
                     let matchedAnc = false;
                     for (const [key, setName] of Object.entries(SET_KEYS)) {
                         if (cmd.startsWith(`${PREFIX}${key} `)) {
                             matchedAnc = true;
                             const rawArgs = body.slice(PREFIX.length + key.length + 1).trim();
-                            if (!rawArgs || !isGroup) break;
+                            if (!rawArgs || !isGroup) {
+                                if (!isGroup) await this.send(chat, `❌ Group command only.`);
+                                break;
+                            }
 
                             const parts = rawArgs.split(/\s+/);
                             const lastToken = parts[parts.length - 1];
@@ -837,7 +972,7 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
-                // Isolated Auto-Reply + Massive Varied Emoji Reactions (runs non-blocking so commands never freeze)
+                // Isolated Auto-Reply + Massive Varied Emoji Reactions
                 if (
                     !runtimeState.botPaused &&
                     isChatAutoReplyOn(this.phone, chat) &&
@@ -1113,7 +1248,7 @@ class Hub {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v10  ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v11  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
