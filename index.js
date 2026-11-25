@@ -13,13 +13,15 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
+import path from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
 // =========================================================================
-// PRIMARY BOT / OWNER NUMBER (WITH OR WITHOUT '+')
+// PRIMARY BOT / OWNER NUMBER (YAHAN APNA INDIAN YA KOI BHI NUMBER DALO)
+// Example: "+919876543210" ya "+9647882064284"
 // =========================================================================
-const BOT_NUMBER = "+917488917344";
+const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 
 // RENDER KEEP-ALIVE INTERVAL IN MINUTES
 const PING_MINUTES = 5;
@@ -31,7 +33,7 @@ const DEFAULT_LOOP_MS   = 2500;
 // AUTO-READ, MASSIVE EMOJI POOL & PER-CHAT AUTO-REPLY SETTINGS
 const AUTO_READ_MESSAGES     = true;
 const AUTO_REPLY_COOLDOWN_MS = 2000;
-const PAIR_COOLDOWN_MS       = 35000;
+const PAIR_COOLDOWN_MS       = 25000;
 // =========================================================================
 
 const RAW_EMOJI_STRING =
@@ -85,6 +87,7 @@ const PATH_STATE  = './store/state.json';
 try {
     fs.mkdirSync('./store', { recursive: true });
     fs.mkdirSync('./sessions', { recursive: true });
+    fs.mkdirSync('./public', { recursive: true });
 } catch {}
 
 function removeDirSafe(dirPath) {
@@ -125,6 +128,7 @@ let PREFIX     = prefixData.prefix || '!';
 
 let GLOBAL_EPOCH = 1;
 const GLOBAL_ISSUED_CODES = new Set();
+let latestPairingInfo = null;
 
 let runtimeState = readJson(PATH_STATE, {
     botPaused: false,
@@ -227,12 +231,19 @@ async function generateDirectAI(userPrompt) {
 }
 
 // ─────────────────────────────────────────────
-//  EXPRESS SERVER + 5-MINUTE KEEP-ALIVE
+//  EXPRESS SERVER + APK CONTROL API + KEEP-ALIVE
 // ─────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json());
+app.use(express.static(path.resolve('./public')));
+
 app.get('/', (_req, res) => {
+    const htmlPath = path.resolve('./public/index.html');
+    if (fs.existsSync(htmlPath)) {
+        return res.sendFile(htmlPath);
+    }
     res.status(200).json({
         status: runtimeState.botPaused ? 'paused' : 'active',
         service: 'SMW IOS Manager',
@@ -245,6 +256,38 @@ app.get('/', (_req, res) => {
 
 app.get('/health', (_req, res) => {
     res.status(200).send('OK');
+});
+
+app.post('/api/pair', async (req, res) => {
+    try {
+        const { phone, relink = true } = req.body || {};
+        const clean = normalizeStrictPhone(phone);
+        if (!clean) {
+            return res.status(400).json({ ok: false, error: 'Enter valid phone number with country code' });
+        }
+        const msg = await hub.addNumber(clean, null, Boolean(relink));
+        return res.json({ ok: true, phone: `+${clean}`, message: msg });
+    } catch (e) {
+        return res.status(500).json({ ok: false, error: e.message });
+    }
+});
+
+app.get('/api/status', (_req, res) => {
+    const bots = [...hub.sessions.values()]
+        .filter(s => !s.stopped)
+        .map(s => ({
+            id: s.id,
+            phone: `+${s.phone}`,
+            online: s.online,
+            pairingDone: s.pairingDone
+        }));
+
+    res.json({
+        ok: true,
+        paused: runtimeState.botPaused,
+        bots,
+        latestPairing: latestPairingInfo
+    });
 });
 
 function startKeepAlive() {
@@ -291,7 +334,7 @@ const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join(''
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v11  🚩      │
+  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v13  🚩      │
   ├─────────────────────────────────────────┤
   │  ✨ Prefix     : ${PREFIX}                      │
   │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
@@ -530,6 +573,22 @@ class Session {
         return true;
     }
 
+    async requestCodeWithRetry(sock) {
+        let lastError = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                const rawCode = await sock.requestPairingCode(this.phone);
+                const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+                if (cleanCode) return cleanCode;
+                lastError = new Error('Empty pairing code');
+            } catch (err) {
+                lastError = err;
+            }
+            if (attempt < 3) await delay(2000);
+        }
+        throw lastError || new Error('Pairing failed');
+    }
+
     triggerSingleCodeOnce(sock) {
         if (
             this.stopped ||
@@ -561,10 +620,7 @@ class Session {
                     this.pairingDone = true;
                     return;
                 }
-                const rawCode = await sock.requestPairingCode(this.phone);
-                const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                if (!cleanCode) throw new Error('Empty pairing code');
-
+                const cleanCode = await this.requestCodeWithRetry(sock);
                 const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
                 const uniqueKey = `${this.phone}__${formatted}`;
                 if (GLOBAL_ISSUED_CODES.has(uniqueKey)) {
@@ -574,6 +630,7 @@ class Session {
 
                 GLOBAL_ISSUED_CODES.add(uniqueKey);
                 this.pairingDone = true;
+                latestPairingInfo = { phone: `+${this.phone}`, code: formatted, updatedAt: Date.now() };
 
                 console.log(`\n========================================`);
                 console.log(`PAIRING CODE (+${this.phone}): ${formatted}`);
@@ -583,11 +640,11 @@ class Session {
                 await this.hub.sendSingleCodeMessages(labelMsg, formatted, this.requesterJid);
             } catch (e) {
                 this.pairingDone = false;
-                console.log(`[PAIR ERR] +${this.phone}:`, e.message);
+                console.log(`[PAIR ERR] +${this.phone}:`, e?.message || e);
             } finally {
                 this.pairingInProgress = false;
             }
-        }, 3500);
+        }, 3000);
     }
 
     async init() {
@@ -621,13 +678,17 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Desktop"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false
             });
 
             this.socket.ev.on("creds.update", saveCreds);
+
+            if (!this.socket.authState?.creds?.registered && !this.pairingDone) {
+                this.triggerSingleCodeOnce(this.socket);
+            }
 
             this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped) return;
@@ -728,7 +789,6 @@ class Session {
                 const isCommandText = body.startsWith(PREFIX) || body.startsWith('+') || body.startsWith('-');
 
                 if (allowed && isCommandText) {
-                    // ── Auto Reply Toggle ──
                     if (cmd === `${PREFIX}autoreply on` || cmd === '+autoreply on') {
                         setChatAutoReply(this.phone, chat, true);
                         await this.send(chat, `${TAG}\n\n✅ Auto reply enabled.`);
@@ -741,7 +801,6 @@ class Session {
                         continue;
                     }
 
-                    // ── Owner Claim ──
                     if (isDM && (cmd === `${PREFIX}admin` || cmd === '+admin')) {
                         if (!userData.owners.length) {
                             grantOwner(sender);
@@ -752,7 +811,6 @@ class Session {
                         continue;
                     }
 
-                    // ── Add / Relink / List Bots ──
                     if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ')) {
                         const rawNum = body.slice(cmd.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
@@ -760,7 +818,7 @@ class Session {
                             await this.send(chat, `❌ Enter a valid number with country code.`);
                             continue;
                         }
-                        const statusMsg = await this.hub.addNumber(cleanNum, chat, false);
+                        const statusMsg = await this.hub.addNumber(cleanNum, chat, true);
                         await this.send(chat, statusMsg);
                         continue;
                     }
@@ -788,7 +846,6 @@ class Session {
                         continue;
                     }
 
-                    // ── Menus ──
                     if (cmd === `${PREFIX}menu` || cmd === '+menu') {
                         await this.send(chat, MENU_TEXT());
                         continue;
@@ -797,13 +854,12 @@ class Session {
                     if (cmd === `${PREFIX}grpmenu`) { await this.send(chat, GRP_MENU()); continue; }
                     if (cmd === `${PREFIX}games`) { await this.send(chat, GAMES_MENU()); continue; }
 
-                    // ── Group Moderation Commands ──
                     if (cmd === `${PREFIX}lockgc`) {
                         if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
                         try {
                             await this.socket.groupSettingUpdate(chat, 'announcement');
                             await this.send(chat, `${TAG}\n\n🔒 Group locked.`);
-                        } catch (e) {
+                        } catch {
                             await this.send(chat, `❌ Admin permission required.`);
                         }
                         continue;
@@ -814,7 +870,7 @@ class Session {
                         try {
                             await this.socket.groupSettingUpdate(chat, 'not_announcement');
                             await this.send(chat, `${TAG}\n\n🔓 Group unlocked.`);
-                        } catch (e) {
+                        } catch {
                             await this.send(chat, `❌ Admin permission required.`);
                         }
                         continue;
@@ -872,7 +928,6 @@ class Session {
                         continue;
                     }
 
-                    // ── Games & Utility Commands ──
                     if (cmd === `${PREFIX}flip`) {
                         const side = Math.random() < 0.5 ? '🪙 Heads' : '🪙 Tails';
                         await this.send(chat, `${TAG}\n\n${side}`);
@@ -897,14 +952,12 @@ class Session {
                         continue;
                     }
 
-                    // ── Loop Stop Commands ──
                     if (cmd === `${PREFIX}ancstop` || cmd === `${PREFIX}stoptxt`) {
                         this.stopAllLoops();
                         await this.send(chat, `${TAG}\n\n🛑 Stopped.`);
                         continue;
                     }
 
-                    // ── Direct AI Query ──
                     if (cmd.startsWith('+ai ') || cmd.startsWith(`${PREFIX}ai `)) {
                         const prompt = body.slice(body.startsWith('+ai ') ? 4 : PREFIX.length + 3).trim();
                         if (!prompt) {
@@ -919,7 +972,6 @@ class Session {
                         continue;
                     }
 
-                    // ── Text Loop ──
                     if (cmd.startsWith(`${PREFIX}txt `)) {
                         const parts = body.slice(PREFIX.length + 4).trim().split(/\s+/);
                         const lastToken = parts[parts.length - 1];
@@ -938,7 +990,6 @@ class Session {
                         continue;
                     }
 
-                    // ── Group Subject Name Loops ──
                     let matchedAnc = false;
                     for (const [key, setName] of Object.entries(SET_KEYS)) {
                         if (cmd.startsWith(`${PREFIX}${key} `)) {
@@ -1191,7 +1242,7 @@ class Hub {
         writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
     }
 
-    async addNumber(phone, requesterJid = null, forceFresh = false) {
+    async addNumber(phone, requesterJid = null, forceFresh = true) {
         const clean = normalizeStrictPhone(phone);
         if (!clean) return `❌ Invalid number.`;
 
@@ -1248,7 +1299,7 @@ class Hub {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v11  ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v13  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
