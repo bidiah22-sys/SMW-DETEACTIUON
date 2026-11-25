@@ -13,7 +13,6 @@ import makeWASocket, {
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
-import path from 'path';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
@@ -26,14 +25,16 @@ const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 // RENDER KEEP-ALIVE INTERVAL IN MINUTES
 const PING_MINUTES = 5;
 
-// USER-CONTROLLED LOOP TIMING LIMITS (IN MILLISECONDS)
-const MIN_SAFE_DELAY_MS = 1200;
-const DEFAULT_LOOP_MS   = 2500;
+// ANTI-BAN & USER-CONTROLLED LOOP TIMING LIMITS (IN MILLISECONDS)
+const MIN_SAFE_DELAY_MS  = 1500;
+const DEFAULT_LOOP_MS    = 2800;
+const ANTI_BAN_JITTER_MS = 450;
 
 // AUTO-READ, MASSIVE EMOJI POOL & PER-CHAT AUTO-REPLY SETTINGS
 const AUTO_READ_MESSAGES     = true;
-const AUTO_REPLY_COOLDOWN_MS = 2000;
-const PAIR_COOLDOWN_MS       = 25000;
+const AUTO_REPLY_COOLDOWN_MS = 2200;
+const PAIR_COOLDOWN_MS       = 12000;
+const MAX_WARNS_BEFORE_KICK  = 3;
 // =========================================================================
 
 const RAW_EMOJI_STRING =
@@ -41,7 +42,7 @@ const RAW_EMOJI_STRING =
     "😺😸😹😻😼😽🙀😿😾💋💌💘💝💖💗💓💞💕💟❣️💔❤️‍🔥❤️‍🩹❤️🩷🧡💛💚💙🩵💜🤎🖤🩶🤍💯💢💥💫💦💨🕳️💬👁️‍🗨️🗨️🗯️💭💤" +
     "👋🤚🖐️✋🖖🫱🫲🫳🫴🫷🫸👌🤌🤏✌️🤞🫰🤟🤘🤙👈👉👆🖕👇☝️🫵👍👎✊👊🤛🤜👏🙌🫶👐🤲🤝🙏✍️💅🤳💪🦾🦿🦵🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄🫦" +
     "🐵🐒🦍🦧🐶🐕🦮🐕‍🦺🐩🐺🦊🦝🐱🐈🐈‍⬛🦁🐯🐅🐆🐴🫎🫏🐎🦄🦓🦌🦬🐮🐂🐃🐄🐷🐖🐗🐽🐏🐑🐐🐪🐫🦙🦒🐘🦣🦏🦛🐭🐁🐀🐹🐰🐇🐿️🦫🦔🦇🐻🐻‍❄️🐨🐼🦥🦦🦨🦘🦡🐾🦃🐔🐓🐣🐤🐥🐦🐧🕊️🦅🦆🦢🦉🦤🪶🦩🦚🦜🪽🐦‍⬛🪿🐸🐊🐢🦎🐍🐲🐉🦕🦖🐳🐋🐬🦭🐟🐠🐡🦈🐙🐚🪸🪼🐌🦋🐛🐜🐝🪲🐞🦗🪳🕷️🕸️🦂🦟🪰🪱🦠" +
-    "💐🌸💮🪷🏵️🌹🥀🌺🌻🌼🌷🪻🌱🪴🌲🌳🌴🌵🌾🌿☘️🍀🍁🍂🍃🪹🪺🍄🍇🍈🍉🍊🍋🍌🍍🥭🍎🍏🍐🍑🍒🍓🫐🥝🍅🫒🥥🥑🍆🥔🥕🌽🌶️🫑🥒🥬🥦🧄🧅🥜🫘🌰🫚🫛🍞🥐🥖🫓🥨🥯🥞🧇🧀🍖🍗🥩🥓🍔🍟🍕🌭🥪🌮🌯🫔🥙🧆🥚🍳🥘🍲🫕🥣🥗🍿🧈🧂🥫🍱🍘🍙🍚🍛🍜🍝🍠🍢🍣🍤🍥🥮🍡🥟🥠🥡🦀🦞🦐🦑🦪🍦🍧🍨🍩🍪🎂🍰🧁🥧🍫🍬🍭🍮🍯🍼🥛☕🫖🍵🍶🍾🍷🍸🍹🍺🍻🥂🥃🫗🥤🧋🧃🧉🧊" +
+    "💐🌸💮🪷🏵️🌹🥀🌺🌻🌼🌷🪻🌱🪴🌲🌳🌴🌵🌾🌿☘️🍀🍁🍂🍃🪹🪺🍄🍇🍈🍉🍊🍋🍌🍍🥭🍎🍏🍐🍑🍒🍓🫐🥝🍅🫒🥥🥑🍆🥔🥕🌽🌶️🫑🥒🥬🥦🧄🧅🥜🫘🌰🫚🫛🍞🥐🥖🫓🥨🥯🥞🧇🧀🍖🍗🥩🥓🍔🍟🍕🌭🥪🌮🌯🫔🥙🧆🥚🍳🥘🍲🫕🥣🥗🍿🧈🧂🥫🍱🍘🍙🍚🍛🍜🍝🍠🍢🍣🍤🍥🥮🍡🥟🥠🥡🦀🦞🦐🦑🦪🍦🍧🍨🍩🍪🎂🍰🧁🥧🍫🍬🍭🍮🍯🍼🥛☕🫖🍵🍶🍾🍷🍸🍹🍺🍻🥂🥃🗗🥤🧋🧃🧉🧊" +
     "🌍🌎🌏🌐🗺️🧭🏔️⛰️🌋🗻🏕️🏖️🏜️🏝️🏞️🏟️🏛️🏗️🧱🪨🪵🛖🏘️🏚️🏠🏡🏢🏣🏤🏥🏦🏨🏩🏪🏫🏬🏭🏯🏰💒🗼🗽⛪🕌🛕🕍⛩️🕋⛲⛺🌁🌃🏙️🌄🌅🌆🌇🌉♨️🎠🛝🎡🎢💈🎪🚂🚃🚄🚅🚆🚇🚈🚉🚊🚝🚞🚋🚌🚍🚎🚐🚑🚒🚓🚔🚕🚖🚗🚘🚙🛻🚚🚛🚜🏎️🏍️🛵🦽🦼🛺🚲🛴🛹🛼🚏🛣️🛤️🛢️⛽🛞🚨🚥🚦🛑🚧⚓🛟⛵🛶🚤🛳️⛴️🛥️🚢✈️🛩️🛫🛬🪂💺🚁🚟🚠🚡🛰️🚀🛸" +
     "🛎️🧳⌛⏳⌚⏰⏱️⏲️🕰️🕛🕧🕐🕜🕑🕝🕒🕞🕓🕟🕔🕠🕕🕡🕖🕢🕗🕣🕘🕤🕙🕥十一🕦🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌡️☀️🌝🌞🪐⭐🌟🌠🌌☁️⛅⛈️🌤️🌥️🌦️🌧️🌨️🌩️🌪️🌫️🌬️🌀🌈🌂☂️☔⛱️⚡❄️☃️⛄☄️🔥💧🌊" +
     "🎃🎄🎆🎇🧨✨🎈🎉🎊🎋🎍🎎🎏🎐🎑🧧🎀🎁🎗️🎟️🎫🎖️🏆🏅🥇🥈🥉⚽⚾🥎🏀🏐🏈🏉🎾🥏🎳🏏🏑🏒🥍🏓🏸🥊🥋🥅⛳⛸️🎣🤿🎽🎿🛷🥌🎯🪀🪁🔫🎱🔮🪄🎮🕹️🎰🎲🧩🧸🪅🪩🪆♠️♥️♦️♣️♟️🃏🀄🎴🎭🖼️🎨🧵🪡🧶🪢" +
@@ -63,9 +64,15 @@ function pickRandomReaction() {
     return REACTION_POOL[idx];
 }
 
+// Supports Indian (+91 / 91 / 091 / 10-digit) and any international E.164 number
 function normalizeStrictPhone(rawInput) {
     if (!rawInput) return '';
-    let digits = String(rawInput).replace(/\D/g, '').replace(/^0+/, '');
+    let digits = String(rawInput).replace(/\D/g, '');
+    if (digits.startsWith('00')) digits = digits.slice(2);
+    digits = digits.replace(/^0+/, '');
+    if (digits.length === 10) {
+        digits = `91${digits}`;
+    }
     if (digits.length < 7 || digits.length > 15) return '';
     return digits;
 }
@@ -83,11 +90,11 @@ const PATH_TIMING = './store/timing.json';
 const PATH_PREFIX = './store/prefix.json';
 const PATH_BOTS   = './store/bots.json';
 const PATH_STATE  = './store/state.json';
+const PATH_GC     = './store/gc_settings.json';
 
 try {
     fs.mkdirSync('./store', { recursive: true });
     fs.mkdirSync('./sessions', { recursive: true });
-    fs.mkdirSync('./public', { recursive: true });
 } catch {}
 
 function removeDirSafe(dirPath) {
@@ -109,7 +116,7 @@ const readJson = (p, def) => {
     try {
         if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
     } catch {}
-    return { ...def };
+    return JSON.parse(JSON.stringify(def));
 };
 const writeJson = (p, d) => {
     try {
@@ -125,6 +132,11 @@ let timingMap  = readJson(PATH_TIMING, {
 });
 let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
 let PREFIX     = prefixData.prefix || '!';
+let gcSettings = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
+
+if (!gcSettings.antiLink) gcSettings.antiLink = {};
+if (!gcSettings.welcome) gcSettings.welcome = {};
+if (!gcSettings.warns) gcSettings.warns = {};
 
 let GLOBAL_EPOCH = 1;
 const GLOBAL_ISSUED_CODES = new Set();
@@ -142,6 +154,12 @@ if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'obje
 function saveRuntimeState() {
     try {
         writeJson(PATH_STATE, runtimeState);
+    } catch {}
+}
+
+function saveGcSettings() {
+    try {
+        writeJson(PATH_GC, gcSettings);
     } catch {}
 }
 
@@ -176,7 +194,8 @@ function setChatAutoReply(sessionPhone, chatJid, enabled) {
 function getSafeDelay(inputMs) {
     const parsed = Number(inputMs);
     if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_LOOP_MS;
-    return Math.max(MIN_SAFE_DELAY_MS, parsed);
+    const jitter = Math.floor(Math.random() * ANTI_BAN_JITTER_MS);
+    return Math.max(MIN_SAFE_DELAY_MS, parsed) + jitter;
 }
 
 // ─────────────────────────────────────────────
@@ -231,63 +250,13 @@ async function generateDirectAI(userPrompt) {
 }
 
 // ─────────────────────────────────────────────
-//  EXPRESS SERVER + APK CONTROL API + KEEP-ALIVE
+//  RENDER KEEP-ALIVE SERVER (NO WEB PANEL UI)
 // ─────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use(express.static(path.resolve('./public')));
-
-app.get('/', (_req, res) => {
-    const htmlPath = path.resolve('./public/index.html');
-    if (fs.existsSync(htmlPath)) {
-        return res.sendFile(htmlPath);
-    }
-    res.status(200).json({
-        status: runtimeState.botPaused ? 'paused' : 'active',
-        service: 'SMW IOS Manager',
-        primaryNumber: CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : null,
-        emojiPoolCount: REACTION_POOL.length,
-        pingMinutes: PING_MINUTES,
-        uptimeSec: Math.floor(process.uptime())
-    });
-});
-
 app.get('/health', (_req, res) => {
     res.status(200).send('OK');
-});
-
-app.post('/api/pair', async (req, res) => {
-    try {
-        const { phone, relink = true } = req.body || {};
-        const clean = normalizeStrictPhone(phone);
-        if (!clean) {
-            return res.status(400).json({ ok: false, error: 'Enter valid phone number with country code' });
-        }
-        const msg = await hub.addNumber(clean, null, Boolean(relink));
-        return res.json({ ok: true, phone: `+${clean}`, message: msg });
-    } catch (e) {
-        return res.status(500).json({ ok: false, error: e.message });
-    }
-});
-
-app.get('/api/status', (_req, res) => {
-    const bots = [...hub.sessions.values()]
-        .filter(s => !s.stopped)
-        .map(s => ({
-            id: s.id,
-            phone: `+${s.phone}`,
-            online: s.online,
-            pairingDone: s.pairingDone
-        }));
-
-    res.json({
-        ok: true,
-        paused: runtimeState.botPaused,
-        bots,
-        latestPairing: latestPairingInfo
-    });
 });
 
 function startKeepAlive() {
@@ -334,7 +303,7 @@ const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join(''
 // ─────────────────────────────────────────────
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v13  🚩      │
+  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v15  🚩      │
   ├─────────────────────────────────────────┤
   │  ✨ Prefix     : ${PREFIX}                      │
   │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
@@ -352,10 +321,10 @@ const MENU_TEXT = () => `
          ↳ ${g('ai assistant')}
 
   > 📱  ${PREFIX}addbot [number] | ${PREFIX}relink [number] | ${PREFIX}bots
-         ↳ ${g('link or view numbers')}
+         ↳ ${g('direct login or view numbers')}
 
   > 👥  ${PREFIX}grpmenu
-         ↳ ${g('group commands')}
+         ↳ ${g('group and gc power commands')}
 
   > 🎮  ${PREFIX}games
          ↳ ${g('utility commands')}
@@ -393,10 +362,16 @@ const GRP_MENU = () => `
   │  ✨ Prefix : ${PREFIX}                      │
   └─────────────────────────────────────────┘
 
-  🛡️  *${g('MODERATION')}*
-  • ${PREFIX}lockgc        • ${PREFIX}unlockgc
-  • ${PREFIX}mute @user    • ${PREFIX}unmute @user
-  • ${PREFIX}promote @user • ${PREFIX}demote @user
+  🛡️  *${g('MODERATION & GC POWER')}*
+  • ${PREFIX}lockgc          • ${PREFIX}unlockgc
+  • ${PREFIX}mute @user      • ${PREFIX}unmute @user
+  • ${PREFIX}kick @user      • ${PREFIX}add [number]
+  • ${PREFIX}warn @user      • ${PREFIX}unwarn @user
+  • ${PREFIX}promote @user   • ${PREFIX}demote @user
+  • ${PREFIX}tagall [msg]    • ${PREFIX}everyone [msg]
+  • ${PREFIX}setname [name]  • ${PREFIX}setdesc [text]
+  • ${PREFIX}antilink on/off • ${PREFIX}welcome on/off
+  • ${PREFIX}groupinfo       • ${PREFIX}admins
   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
 
 const GAMES_MENU = () => `
@@ -470,6 +445,10 @@ function getTargetUsers(raw, content, argsText) {
     return [];
 }
 
+function hasLink(text) {
+    return /(https?:\/\/|www\.|chat\.whatsapp\.com\/|t\.me\/|instagram\.com\/|youtube\.com\/|youtu\.be\/)/i.test(text || '');
+}
+
 // ═════════════════════════════════════════════
 //  SESSION MANAGER (STRICTLY ISOLATED PER NUMBER)
 // ═════════════════════════════════════════════
@@ -492,6 +471,7 @@ class Session {
         this.reconnectTimer = null;
         this.dedupeTimer = null;
         this.stopped = false;
+        this.sendQueue = Promise.resolve();
 
         this.processedMsgs = new Map();
         this.sentByBotIds = new Set();
@@ -552,9 +532,7 @@ class Session {
         this.stopAllLoops();
         try {
             if (this.socket?.ev?.removeAllListeners) {
-                this.socket.ev.removeAllListeners('connection.update');
-                this.socket.ev.removeAllListeners('messages.upsert');
-                this.socket.ev.removeAllListeners('creds.update');
+                this.socket.ev.removeAllListeners();
             }
         } catch {}
         try {
@@ -575,18 +553,123 @@ class Session {
 
     async requestCodeWithRetry(sock) {
         let lastError = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        for (let attempt = 1; attempt <= 4; attempt++) {
             try {
+                await delay(1200 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                if (cleanCode) return cleanCode;
-                lastError = new Error('Empty pairing code');
+                if (cleanCode && cleanCode.length >= 6) return cleanCode;
+                lastError = new Error('Invalid pairing code returned');
             } catch (err) {
                 lastError = err;
             }
-            if (attempt < 3) await delay(2000);
         }
         throw lastError || new Error('Pairing failed');
+    }
+
+    async generateFreshPairingCodeNow() {
+        if (!this.phone) throw new Error('Invalid phone number');
+        const authDir = this.getAuthDir();
+        removeDirSafe(authDir);
+        ensureDir(authDir);
+
+        if (this.socket) {
+            try {
+                this.socket.ev.removeAllListeners();
+                if (this.socket.ws?.close) this.socket.ws.close();
+            } catch {}
+            this.socket = null;
+        }
+
+        this.pairingDone = false;
+        this.pairingInProgress = true;
+
+        try {
+            const { state, saveCreds } = await useMultiFileAuthState(authDir);
+            const { version } = await fetchLatestBaileysVersion();
+
+            const sock = makeWASocket({
+                auth: state,
+                version,
+                logger: pino({ level: "silent" }),
+                printQRInTerminal: false,
+                browser: Browsers.ubuntu("Chrome"),
+                connectTimeoutMs: 60000,
+                defaultQueryTimeoutMs: 60000,
+                markOnlineOnConnect: false,
+                syncFullHistory: false
+            });
+
+            this.socket = sock;
+            sock.ev.on("creds.update", saveCreds);
+
+            sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
+                if (this.stopped) return;
+                if (connection === "open") {
+                    this.online = true;
+                    this.pairingDone = true;
+                    this.pairingInProgress = false;
+                    this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                    if (sock.user.lid) {
+                        this.selfLid = sock.user.lid.split(':')[0] + '@lid';
+                    }
+                    console.log(`[${this.id}] Paired & Connected: +${this.phone}`);
+                } else if (connection === "close") {
+                    this.online = false;
+                    const statusCode = lastDisconnect?.error?.output?.statusCode;
+                    if (statusCode === DisconnectReason.loggedOut) {
+                        removeDirSafe(authDir);
+                        this.pairingDone = false;
+                    } else if (!this.stopped && !this.reconnectTimer) {
+                        this.reconnectTimer = setTimeout(() => {
+                            this.reconnectTimer = null;
+                            if (!this.stopped) this.init();
+                        }, 5000);
+                    }
+                }
+            });
+
+            sock.ev.on('messages.upsert', m => {
+                this.receive(m).catch(err => {
+                    console.log('[UPSERT SAFE ERR]', err?.message || err);
+                });
+            });
+
+            sock.ev.on('group-participants.update', ev => {
+                this.onGroupParticipantsUpdate(ev).catch(() => {});
+            });
+
+            const cleanCode = await this.requestCodeWithRetry(sock);
+            const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
+            latestPairingInfo = { phone: `+${this.phone}`, code: formatted, updatedAt: Date.now() };
+            this.lastPairAttemptAt = Date.now();
+
+            console.log(`\n========================================`);
+            console.log(`PAIRING CODE (+${this.phone}): ${formatted}`);
+            console.log(`========================================\n`);
+
+            return formatted;
+        } finally {
+            this.pairingInProgress = false;
+        }
+    }
+
+    async onGroupParticipantsUpdate(ev) {
+        if (this.stopped || runtimeState.botPaused || !this.online || !this.socket) return;
+        const groupJid = ev?.id;
+        if (!groupJid || !groupJid.endsWith('@g.us')) return;
+        if (ev.action === 'add' && gcSettings.welcome?.[groupJid]) {
+            const participants = ev.participants || [];
+            const mentions = participants.filter(Boolean);
+            const names = mentions.map(j => `@${j.split('@')[0]}`).join(', ');
+            if (names) {
+                await this.send(
+                    groupJid,
+                    `${TAG}\n\n👋 Welcome ${names}!`,
+                    mentions
+                );
+            }
+        }
     }
 
     triggerSingleCodeOnce(sock) {
@@ -644,7 +727,7 @@ class Session {
             } finally {
                 this.pairingInProgress = false;
             }
-        }, 3000);
+        }, 2500);
     }
 
     async init() {
@@ -653,9 +736,7 @@ class Session {
 
             if (this.socket) {
                 try {
-                    this.socket.ev.removeAllListeners('connection.update');
-                    this.socket.ev.removeAllListeners('messages.upsert');
-                    this.socket.ev.removeAllListeners('creds.update');
+                    this.socket.ev.removeAllListeners();
                     if (this.socket.ws?.close) this.socket.ws.close();
                 } catch {}
                 this.socket = null;
@@ -678,10 +759,11 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false
+                markOnlineOnConnect: false,
+                syncFullHistory: false
             });
 
             this.socket.ev.on("creds.update", saveCreds);
@@ -736,6 +818,10 @@ class Session {
                     console.log('[UPSERT SAFE ERR]', err?.message || err);
                 });
             });
+
+            this.socket.ev.on('group-participants.update', ev => {
+                this.onGroupParticipantsUpdate(ev).catch(() => {});
+            });
         } catch (e) {
             console.error(`[${this.id}] Init error:`, e.message);
         }
@@ -778,12 +864,22 @@ class Session {
                     continue;
                 }
 
+                // Strictly silent/idle when KILL ALL is active; pairing remains connected
                 if (runtimeState.botPaused) continue;
 
                 if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
                     try {
                         await this.socket.readMessages([raw.key]);
                     } catch {}
+                }
+
+                // Anti-link guard in groups when enabled
+                if (isGroup && !isOwn && gcSettings.antiLink?.[chat] && hasLink(body)) {
+                    try {
+                        await this.socket.sendMessage(chat, { delete: raw.key });
+                        await this.send(chat, `${TAG}\n\n🚫 Links are not allowed here, @${sender.split('@')[0]}.`, [sender]);
+                    } catch {}
+                    continue;
                 }
 
                 const isCommandText = body.startsWith(PREFIX) || body.startsWith('+') || body.startsWith('-');
@@ -818,8 +914,14 @@ class Session {
                             await this.send(chat, `❌ Enter a valid number with country code.`);
                             continue;
                         }
-                        const statusMsg = await this.hub.addNumber(cleanNum, chat, true);
-                        await this.send(chat, statusMsg);
+                        await this.send(chat, `${TAG}\n\n⏳ Generating pairing code for +${cleanNum}...`);
+                        try {
+                            const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
+                            await this.send(chat, `${TAG}\n\nPairing code for +${cleanNum}:`);
+                            await this.send(chat, resPair.code);
+                        } catch (err) {
+                            await this.send(chat, `❌ Pairing failed for +${cleanNum}: ${err.message}`);
+                        }
                         continue;
                     }
 
@@ -830,8 +932,14 @@ class Session {
                             await this.send(chat, `❌ Enter a valid number with country code.`);
                             continue;
                         }
-                        const statusMsg = await this.hub.addNumber(cleanNum, chat, true);
-                        await this.send(chat, statusMsg);
+                        await this.send(chat, `${TAG}\n\n⏳ Generating fresh pairing code for +${cleanNum}...`);
+                        try {
+                            const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
+                            await this.send(chat, `${TAG}\n\nPairing code for +${cleanNum}:`);
+                            await this.send(chat, resPair.code);
+                        } catch (err) {
+                            await this.send(chat, `❌ Relink failed for +${cleanNum}: ${err.message}`);
+                        }
                         continue;
                     }
 
@@ -924,6 +1032,161 @@ class Session {
                             await this.send(chat, `${TAG}\n\n🔊 Added back to group.`);
                         } catch {
                             await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}kick`) || cmd.startsWith(`${PREFIX}remove`)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const argPart = body.slice(PREFIX.length + (cmd.startsWith(`${PREFIX}kick`) ? 4 : 6)).trim();
+                        const targets = getTargetUsers(raw, content, argPart);
+                        if (!targets.length) { await this.send(chat, `❌ Tag or reply to a user.`); continue; }
+                        try {
+                            await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
+                            await this.send(chat, `${TAG}\n\n👢 Kicked from group.`);
+                        } catch {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}warn`)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
+                        if (!targets.length) { await this.send(chat, `❌ Tag or reply to a user.`); continue; }
+                        const target = targets[0];
+                        gcSettings.warns[chat] = gcSettings.warns[chat] || {};
+                        const nextCount = (gcSettings.warns[chat][target] || 0) + 1;
+                        gcSettings.warns[chat][target] = nextCount;
+                        saveGcSettings();
+                        if (nextCount >= MAX_WARNS_BEFORE_KICK) {
+                            gcSettings.warns[chat][target] = 0;
+                            saveGcSettings();
+                            try {
+                                await this.socket.groupParticipantsUpdate(chat, [target], 'remove');
+                                await this.send(chat, `${TAG}\n\n👢 @${target.split('@')[0]} reached ${MAX_WARNS_BEFORE_KICK}/${MAX_WARNS_BEFORE_KICK} warns and was removed.`, [target]);
+                            } catch {
+                                await this.send(chat, `❌ Admin permission required to remove @${target.split('@')[0]}.`, [target]);
+                            }
+                        } else {
+                            await this.send(chat, `${TAG}\n\n⚠️ Warned @${target.split('@')[0]} (${nextCount}/${MAX_WARNS_BEFORE_KICK}).`, [target]);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}unwarn`)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
+                        if (!targets.length) { await this.send(chat, `❌ Tag or reply to a user.`); continue; }
+                        const target = targets[0];
+                        if (gcSettings.warns?.[chat]?.[target]) {
+                            delete gcSettings.warns[chat][target];
+                            saveGcSettings();
+                        }
+                        await this.send(chat, `${TAG}\n\n✅ Warns cleared for @${target.split('@')[0]}.`, [target]);
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}add `)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const num = normalizeStrictPhone(body.slice(PREFIX.length + 4).trim());
+                        if (!num) { await this.send(chat, `❌ Enter valid number with country code.`); continue; }
+                        try {
+                            await this.socket.groupParticipantsUpdate(chat, [`${num}@s.whatsapp.net`], 'add');
+                            await this.send(chat, `${TAG}\n\n➕ Added +${num}.`);
+                        } catch {
+                            await this.send(chat, `❌ Could not add +${num}.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}setname `)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const title = body.slice(PREFIX.length + 8).trim();
+                        if (!title) { await this.send(chat, `❌ Usage: ${PREFIX}setname <new name>`); continue; }
+                        try {
+                            await this.socket.groupUpdateSubject(chat, title);
+                            await this.send(chat, `${TAG}\n\n✏️ Group name updated.`);
+                        } catch {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}setdesc `)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const desc = body.slice(PREFIX.length + 8).trim();
+                        if (!desc) { await this.send(chat, `❌ Usage: ${PREFIX}setdesc <description>`); continue; }
+                        try {
+                            await this.socket.groupUpdateDescription(chat, desc);
+                            await this.send(chat, `${TAG}\n\n📝 Group description updated.`);
+                        } catch {
+                            await this.send(chat, `❌ Admin permission required.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}antilink on` || cmd === `${PREFIX}antilink off`) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const enabled = cmd.endsWith(' on');
+                        gcSettings.antiLink[chat] = enabled;
+                        saveGcSettings();
+                        await this.send(chat, `${TAG}\n\n${enabled ? '🛡️ Anti-link ON' : '🔓 Anti-link OFF'}`);
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}welcome on` || cmd === `${PREFIX}welcome off`) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        const enabled = cmd.endsWith(' on');
+                        gcSettings.welcome[chat] = enabled;
+                        saveGcSettings();
+                        await this.send(chat, `${TAG}\n\n${enabled ? '👋 Welcome ON' : '🔕 Welcome OFF'}`);
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}groupinfo` || cmd === `${PREFIX}admins`) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        try {
+                            const meta = await this.socket.groupMetadata(chat);
+                            const admins = (meta.participants || [])
+                                .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+                                .map(p => `@${p.id.split('@')[0]}`);
+                            const mentions = (meta.participants || [])
+                                .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
+                                .map(p => p.id);
+                            if (cmd === `${PREFIX}admins`) {
+                                await this.send(chat, `${TAG}\n\n👑 *Group Admins:*\n${admins.join('\n') || 'None'}`, mentions);
+                            } else {
+                                await this.send(
+                                    chat,
+                                    `${TAG}\n\n📌 *Name:* ${meta.subject}\n👥 *Members:* ${meta.participants?.length || 0}\n👑 *Admins:* ${admins.length}`,
+                                    mentions
+                                );
+                            }
+                        } catch {
+                            await this.send(chat, `❌ Failed to load group info.`);
+                        }
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}tagall` || cmd.startsWith(`${PREFIX}tagall `) || cmd === `${PREFIX}everyone` || cmd.startsWith(`${PREFIX}everyone `)) {
+                        if (!isGroup) { await this.send(chat, `❌ Group command only.`); continue; }
+                        try {
+                            const meta = await this.socket.groupMetadata(chat);
+                            const members = (meta.participants || []).map(p => p.id).filter(Boolean);
+                            const customMsg = body.replace(new RegExp(`^\\${PREFIX}(tagall|everyone)\\s*`, 'i'), '').trim() || 'Attention everyone!';
+                            const chunkSize = 20;
+                            for (let i = 0; i < members.length; i += chunkSize) {
+                                if (runtimeState.botPaused || this.stopped) break;
+                                const slice = members.slice(i, i + chunkSize);
+                                const tagsText = slice.map(j => `@${j.split('@')[0]}`).join(' ');
+                                await this.send(chat, `${TAG}\n\n📣 ${customMsg}\n\n${tagsText}`, slice);
+                                if (i + chunkSize < members.length) {
+                                    await delay(1600);
+                                }
+                            }
+                        } catch {
+                            await this.send(chat, `❌ Tagall failed.`);
                         }
                         continue;
                     }
@@ -1034,7 +1297,11 @@ class Session {
                     const reqEpoch = GLOBAL_EPOCH;
                     const chosenEmoji = pickRandomReaction();
 
-                    this.socket.sendMessage(chat, { react: { text: chosenEmoji, key: raw.key } }).catch(() => {});
+                    this.enqueueSend(async () => {
+                        if (!this.stopped && !runtimeState.botPaused && this.socket && this.online) {
+                            await this.socket.sendMessage(chat, { react: { text: chosenEmoji, key: raw.key } });
+                        }
+                    });
 
                     const replyKey = `${normalizeChatKey(chat)}__${sender}`;
                     const lastTs = this.lastAutoReplyAt.get(replyKey) || 0;
@@ -1175,20 +1442,35 @@ class Session {
         } catch {}
     }
 
-    async send(jid, text) {
+    enqueueSend(taskFn) {
+        this.sendQueue = this.sendQueue
+            .then(async () => {
+                await taskFn();
+                await delay(350 + Math.floor(Math.random() * 250));
+            })
+            .catch(() => {});
+        return this.sendQueue;
+    }
+
+    async send(jid, text, mentions = undefined) {
         if (this.stopped || !this.socket || !this.online) return;
-        try {
-            const sent = await this.socket.sendMessage(jid, { text });
-            if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
-        } catch {}
+        await this.enqueueSend(async () => {
+            try {
+                const payload = mentions ? { text, mentions } : { text };
+                const sent = await this.socket.sendMessage(jid, payload);
+                if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
+            } catch {}
+        });
     }
 
     async sendQuoted(jid, text, quotedMsg) {
         if (this.stopped || !this.socket || !this.online) return;
-        try {
-            const sent = await this.socket.sendMessage(jid, { text }, { quoted: quotedMsg });
-            if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
-        } catch {}
+        await this.enqueueSend(async () => {
+            try {
+                const sent = await this.socket.sendMessage(jid, { text }, { quoted: quotedMsg });
+                if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
+            } catch {}
+        });
     }
 }
 
@@ -1242,19 +1524,14 @@ class Hub {
         writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
     }
 
-    async addNumber(phone, requesterJid = null, forceFresh = true) {
+    async pairAndGetCode(phone, requesterJid = null, forceFresh = true) {
         const clean = normalizeStrictPhone(phone);
-        if (!clean) return `❌ Invalid number.`;
+        if (!clean) throw new Error('Invalid phone number');
 
         const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
-        if (existingEntries.length > 0) {
-            if (!forceFresh) {
-                return `⚠️ +${clean} already exists. Use ${PREFIX}relink ${clean} for a new code.`;
-            }
-            for (const [key, oldSess] of existingEntries) {
-                await oldSess.destroySession();
-                this.sessions.delete(key);
-            }
+        for (const [key, oldSess] of existingEntries) {
+            await oldSess.destroySession();
+            this.sessions.delete(key);
         }
 
         const id = String(this.counter++);
@@ -1264,8 +1541,13 @@ class Hub {
         const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
         this.saveNumbers(allNums);
 
-        await session.init();
-        return `${TAG}\n\nPairing requested for +${clean}.`;
+        const code = await session.generateFreshPairingCodeNow();
+        return { phone: clean, code };
+    }
+
+    async addNumber(phone, requesterJid = null, forceFresh = true) {
+        const res = await this.pairAndGetCode(phone, requesterJid, forceFresh);
+        return `${TAG}\n\nPairing code for +${res.phone}: ${res.code}`;
     }
 
     pauseAllBotsWithoutLogout() {
@@ -1299,7 +1581,7 @@ class Hub {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v13  ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v15  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
