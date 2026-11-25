@@ -1,20 +1,19 @@
 {
-  "name": "smw-ios-manager",
-  "version": "10.0.0",
-  "description": "SMW IOS WhatsApp Multi-Bot Manager with Gemini AI and Render Keep-Alive",
+  "name": "smw-ios-whatsapp-manager",
+  "version": "15.0.0",
   "type": "module",
+  "description": "SMW IOS Multi-Bot WhatsApp Manager for Render / GitHub",
   "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.7.8",
-    "express": "^4.21.1",
-    "pino": "^9.5.0"
-  },
-  "engines": {
-    "node": ">=20.0.0"
+    "@whiskeysockets/baileys": "^6.7.16",
+    "express": "^4.21.2",
+    "pino": "^9.6.0"
   }
 }
