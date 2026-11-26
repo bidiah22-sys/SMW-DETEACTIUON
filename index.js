@@ -22,18 +22,18 @@ import express from 'express';
 // =========================================================================
 const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 
-// RENDER KEEP-ALIVE INTERVAL IN MINUTES
+// KEEP-ALIVE INTERVAL IN MINUTES
 const PING_MINUTES = 4;
 
 // ANTI-BAN & USER-CONTROLLED LOOP TIMING LIMITS (IN MILLISECONDS)
-const MIN_SAFE_DELAY_MS  = 1500;
-const DEFAULT_LOOP_MS    = 2800;
-const ANTI_BAN_JITTER_MS = 450;
+const MIN_SAFE_DELAY_MS  = 1200;
+const DEFAULT_LOOP_MS    = 2200;
+const ANTI_BAN_JITTER_MS = 350;
 
 // AUTO-READ, MASSIVE EMOJI POOL & PER-CHAT AUTO-REPLY SETTINGS
 const AUTO_READ_MESSAGES     = true;
-const AUTO_REPLY_COOLDOWN_MS = 2200;
-const PAIR_COOLDOWN_MS       = 15000;
+const AUTO_REPLY_COOLDOWN_MS = 1200;
+const PAIR_COOLDOWN_MS       = 12000;
 const MAX_WARNS_BEFORE_KICK  = 3;
 // =========================================================================
 
@@ -199,13 +199,13 @@ function getSafeDelay(inputMs) {
 }
 
 // ─────────────────────────────────────────────
-//  GEMINI AI ENGINE (WITH TIMEOUT GUARD & FALLBACKS)
+//  GEMINI AI ENGINE (101% GUARANTEED REPLY)
 // ─────────────────────────────────────────────
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
-function withTimeout(promise, ms = 10000) {
+function withTimeout(promise, ms = 9000) {
     let timer;
     const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('Gemini timeout')), ms);
@@ -214,43 +214,46 @@ function withTimeout(promise, ms = 10000) {
 }
 
 async function callGeminiWithFallback(promptText) {
-    let lastErr = null;
     for (const modelName of GEMINI_MODELS) {
         try {
             const model = genAI.getGenerativeModel({ model: modelName });
-            const res = await withTimeout(model.generateContent(promptText), 10000);
+            const res = await withTimeout(model.generateContent(promptText), 9000);
             const text = res?.response?.text()?.trim();
             if (text) return text;
-        } catch (err) {
-            lastErr = err;
-        }
-    }
-    if (lastErr) {
-        console.log('[GEMINI WARN]', lastErr.message || lastErr);
+        } catch {}
     }
     return null;
+}
+
+function buildSmartFallbackReply(userText) {
+    const clean = String(userText || '').trim();
+    const hasHindi = /[\u0900-\u097F]/.test(clean);
+    if (hasHindi) {
+        return `हाँ भाई, बिल्कुल! "${clean.slice(0, 70)}" — बताओ आगे क्या करना है?`;
+    }
+    return `Haan bhai, bilkul! "${clean.slice(0, 70)}" — batao aage kya karna hai?`;
 }
 
 async function generateMatchingLanguageReply(userText) {
     const prompt =
         `Act as a normal, friendly person chatting on WhatsApp. ` +
         `Reply in the exact same language and script as the user's message (Hindi, Hinglish, English, etc.). ` +
-        `Keep it natural, helpful, and brief (1-3 lines).\n\n` +
+        `Keep it natural, helpful, and brief (1-2 lines).\n\n` +
         `Message: ${userText}`;
     const reply = await callGeminiWithFallback(prompt);
-    return reply ? reply.slice(0, 600) : null;
+    return (reply || buildSmartFallbackReply(userText)).slice(0, 600);
 }
 
 async function generateDirectAI(userPrompt) {
     const prompt =
-        `Reply naturally in the same language as the user's question. Be clear and helpful.\n\n` +
+        `Reply naturally and clearly in the same language as the user's question.\n\n` +
         `Question: ${userPrompt}`;
     const reply = await callGeminiWithFallback(prompt);
-    return (reply || 'Unable to respond right now. Please try again.').slice(0, 1500);
+    return (reply || buildSmartFallbackReply(userPrompt)).slice(0, 1600);
 }
 
 // ─────────────────────────────────────────────
-//  RENDER KEEP-ALIVE SERVER (NO WEB PANEL UI)
+//  KEEP-ALIVE SERVER (NO WEB PANEL UI)
 // ─────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -299,11 +302,59 @@ const ITALIC_GLYPH = {
 const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join('');
 
 // ─────────────────────────────────────────────
-//  MENUS
+//  MENUS & COMMAND LAYOUTS
 // ─────────────────────────────────────────────
+const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
+
+const boxCard = (header, rows) =>
+`╔═════════════════════════════════════╗
+║  ${header}
+╚═════════════════════════════════════╝
+${rows.map(r => `▸ ${r}`).join('\n')}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💗 *${TAG}*`;
+
+const GRAND_START_BANNER = () => boxCard(
+    `⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗔𝗖𝗧𝗜𝗩𝗘 ⚡`,
+    [
+        `*${g('STATUS')}*      : 🟢 ONLINE & FULL POWER`,
+        `*${g('AUTO REPLY')}*  : 🤖 101% READY`,
+        `*${g('GC ENGINE')}*   : 🔥 ANC1-7 & TXT LIVE`,
+        `*${g('AI CORE')}*     : 🧠 GEMINI ACTIVE`,
+        `*${g('PAIRING')}*     : 📱 MULTI-BOT READY`
+    ]
+);
+
+const KILL_ALL_BANNER = () => boxCard(
+    `🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`,
+    [
+        `*${g('LOOPS & REPLY')}* : ⏸️ FROZEN`,
+        `*${g('SESSION')}*       : 🔗 CONNECTED & SAFE`,
+        `*${g('RESUME')}*        : ▶️ USE ${PREFIX}start`
+    ]
+);
+
+const CONNECTED_SUCCESS_BANNER = (phoneNum) => boxCard(
+    `✅ 𝗖𝗢𝗡𝗡𝗘𝗖𝗧𝗘𝗗 𝗦𝗨𝗖𝗖𝗘𝗦𝗦𝗙𝗨𝗟𝗟𝗬 ✅`,
+    [
+        `*${g('NUMBER')}* : +${phoneNum}`,
+        `*${g('STATE')}*  : 🟢 ONLINE & PAIRED`,
+        `*${g('BOT')}*    : ⚡ ${TAG}`
+    ]
+);
+
+const AUTO_REPLY_BANNER = (enabled) => boxCard(
+    enabled ? `🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗡 🤖` : `⛔ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗙𝗙 ⛔`,
+    [
+        `*${g('CHAT MODE')}* : ${enabled ? '🟢 101% ACTIVE' : '🔴 DISABLED'}`,
+        `*${g('REACTIONS')}* : ⚡ RANDOM EMOJI POOL`,
+        `*${g('AI ENGINE')}* : 🧠 INSTANT SMART REPLY`
+    ]
+);
+
 const MENU_TEXT = () => `
   ┌─────────────────────────────────────────┐
-  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v16  🚩      │
+  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v18  🚩      │
   ├─────────────────────────────────────────┤
   │  ✨ Prefix     : ${PREFIX}                      │
   │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
@@ -312,7 +363,7 @@ const MENU_TEXT = () => `
   📂  *${g('CORE COMMAND MENUS')}*
 
   > 🤖  ${PREFIX}autoreply on / off
-         ↳ ${g('chat reply and reactions')}
+         ↳ ${g('101% chat reply and reactions')}
 
   > 🎯  ${PREFIX}targetmenu
          ↳ ${g('name change and text commands')}
@@ -337,61 +388,45 @@ const MENU_TEXT = () => `
   │  🛑  ${PREFIX}killall  ➔ ${g('Stop')}           │
   └─────────────────────────────────────────┘`;
 
-const TARGET_MENU = () => `
-  ┌─────────────────────────────────────────┐
-  │  🎯  𝗧𝗔𝗥𝗚𝗘𝗧  𝗖𝗢𝗡𝗧𝗥𝗢𝗟  𝗖𝗘𝗡𝗧𝗘𝗥  🔥  │
-  ├─────────────────────────────────────────┤
-  │  ✨ Prefix     : ${PREFIX}                      │
-  │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
-  └─────────────────────────────────────────┘
+const TARGET_MENU = () => boxCard(
+    `🎯 𝗧𝗔𝗥𝗚𝗘𝗧 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 🔥`,
+    [
+        `*${g('NAME LOOPS')}* : ${PREFIX}anc1-7 [text] [ms]`,
+        `*${g('STOP NAME')}*  : ${PREFIX}ancstop`,
+        `*${g('TEXT LOOP')}*  : ${PREFIX}txt [text] [ms]`,
+        `*${g('STOP TEXT')}*  : ${PREFIX}stoptxt`
+    ]
+);
 
-  🔥  *${g('NAME COMMANDS')}*
-  • ${PREFIX}anc1-7 [text] [ms]  • ${PREFIX}ancstop
+const GRP_MENU = () => boxCard(
+    `👥 𝗚𝗥𝗢𝗨𝗣 𝗣𝗢𝗪𝗘𝗥 🛡️`,
+    [
+        `*${g('LOCK / UNLOCK')}* : ${PREFIX}lockgc / ${PREFIX}unlockgc`,
+        `*${g('KICK / ADD')}*    : ${PREFIX}kick @user / ${PREFIX}add [num]`,
+        `*${g('WARNS')}*         : ${PREFIX}warn @user / ${PREFIX}unwarn @user`,
+        `*${g('ROLES')}*         : ${PREFIX}promote / ${PREFIX}demote`,
+        `*${g('GROUP INFO')}*    : ${PREFIX}setname / ${PREFIX}setdesc / ${PREFIX}groupinfo / ${PREFIX}admins`,
+        `*${g('GUARDS')}*        : ${PREFIX}antilink on/off / ${PREFIX}welcome on/off / ${PREFIX}tagall`
+    ]
+);
 
-  💣  *${g('TEXT COMMANDS')}*
-  • ${PREFIX}txt [text] [ms]     • ${PREFIX}stoptxt
+const GAMES_MENU = () => boxCard(
+    `🎮 𝗚𝗔𝗠𝗘𝗦 & 𝗧𝗢𝗢𝗟𝗦 🎲`,
+    [
+        `*${g('COIN')}* : ${PREFIX}flip`,
+        `*${g('DICE')}* : ${PREFIX}roll`,
+        `*${g('RPS')}*  : ${PREFIX}rps [rock/paper/scissors]`
+    ]
+);
 
-  ⚡  *${g('CONTROLS')}*
-  • ${PREFIX}killall  • ${PREFIX}start
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-const GRP_MENU = () => `
-  ┌─────────────────────────────────────────┐
-  │  👥  𝗚𝗥𝗢𝗨𝗣  𝗠𝗔𝗡𝗔𝗚𝗘𝗠𝗘𝗡𝗧  🛡️  │
-  ├─────────────────────────────────────────┤
-  │  ✨ Prefix : ${PREFIX}                      │
-  └─────────────────────────────────────────┘
-
-  🛡️  *${g('MODERATION & GC POWER')}*
-  • ${PREFIX}lockgc          • ${PREFIX}unlockgc
-  • ${PREFIX}mute @user      • ${PREFIX}unmute @user
-  • ${PREFIX}kick @user      • ${PREFIX}add [number]
-  • ${PREFIX}warn @user      • ${PREFIX}unwarn @user
-  • ${PREFIX}promote @user   • ${PREFIX}demote @user
-  • ${PREFIX}tagall [msg]    • ${PREFIX}everyone [msg]
-  • ${PREFIX}setname [name]  • ${PREFIX}setdesc [text]
-  • ${PREFIX}antilink on/off • ${PREFIX}welcome on/off
-  • ${PREFIX}groupinfo       • ${PREFIX}admins
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-const GAMES_MENU = () => `
-  ┌─────────────────────────────────────────┐
-  │  🎮  𝗚𝗔𝗠𝗘𝗦  &  𝗨𝗧𝗜𝗟𝗜𝗧𝗜𝗘𝗦  🎲  │
-  ├─────────────────────────────────────────┤
-  │  ✨ Prefix : ${PREFIX}                      │
-  └─────────────────────────────────────────┘
-
-  🎮  *${g('UTILITIES')}*
-  • ${PREFIX}flip  • ${PREFIX}roll  • ${PREFIX}rps [rock/paper/scissors]
-  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
-
-const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
-const win = what => `
-  ┌─────────────────────────┐
-  │  ✨ STARTED             │
-  └─────────────────────────┘
-  ▶ ${g(what)}
-  💗 *${TAG}*`;
+const loopStartLayout = (title, detail) => boxCard(
+    `🔥 ${title.toUpperCase()} STARTED 🔥`,
+    [
+        `*${g('ENGINE')}* : ⚡ RUNNING LIVE`,
+        `*${g('CONFIG')}* : ${detail}`,
+        `*${g('STOP')}*   : 🛑 ${PREFIX}ancstop / ${PREFIX}stoptxt / ${PREFIX}killall`
+    ]
+);
 
 const saveUsers = () => writeJson(PATH_USERS, userData);
 
@@ -464,6 +499,7 @@ class Session {
         this.online = false;
         this.self = null;
         this.selfLid = null;
+        this.notifiedConnectedOnce = false;
 
         this.pairingInProgress = false;
         this.pairingDone = false;
@@ -558,9 +594,9 @@ class Session {
 
     async requestCodeWithRetry(sock) {
         let lastError = null;
-        for (let attempt = 1; attempt <= 4; attempt++) {
+        for (let attempt = 1; attempt <= 5; attempt++) {
             try {
-                await delay(1200 * attempt);
+                await delay(1300 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
                 if (cleanCode && cleanCode.length >= 6) return cleanCode;
@@ -572,13 +608,24 @@ class Session {
         throw lastError || new Error('Pairing failed');
     }
 
+    async markSessionConnectedAndNotify() {
+        this.online = true;
+        this.pairingDone = true;
+        this.pairingInProgress = false;
+        if (this.socket?.user?.id) {
+            this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
+        }
+        if (this.socket?.user?.lid) {
+            this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
+        }
+        if (!this.notifiedConnectedOnce) {
+            this.notifiedConnectedOnce = true;
+            await this.hub.notifyNumberConnected(this.phone, this.requesterJid);
+        }
+    }
+
     async generateFreshPairingCodeNow() {
         if (!this.phone) throw new Error('Invalid phone number');
-        if (this.pairingDone || this.pairingInProgress) {
-            if (latestPairingInfo?.code && latestPairingInfo?.phone === `+${this.phone}`) {
-                return latestPairingInfo.code;
-            }
-        }
 
         const authDir = this.getAuthDir();
         removeDirSafe(authDir);
@@ -594,6 +641,7 @@ class Session {
 
         this.autoPairOnInit = false;
         this.pairingDone = false;
+        this.notifiedConnectedOnce = false;
         this.pairingInProgress = true;
 
         try {
@@ -605,7 +653,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Safari"),
+                browser: Browsers.ios("Safari"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -619,38 +667,24 @@ class Session {
             sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped) return;
                 if (connection === "open") {
-                    this.online = true;
-                    this.pairingDone = true;
-                    this.pairingInProgress = false;
-                    this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                    if (sock.user.lid) {
-                        this.selfLid = sock.user.lid.split(':')[0] + '@lid';
-                    }
-                    console.log(`[${this.id}] Paired & Connected: +${this.phone}`);
+                    await this.markSessionConnectedAndNotify();
+                    console.log(`[${this.id}] Paired & Connected Successfully: +${this.phone}`);
                 } else if (connection === "close") {
                     this.online = false;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
                         this.pairingDone = false;
-                    } else if (!this.stopped && this.pairingDone && !this.reconnectTimer) {
+                    } else if (!this.stopped && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped) this.init();
-                        }, 4000);
+                        }, 2500);
                     }
                 }
             });
 
-            sock.ev.on('messages.upsert', m => {
-                this.receive(m).catch(err => {
-                    console.log('[UPSERT SAFE ERR]', err?.message || err);
-                });
-            });
-
-            sock.ev.on('group-participants.update', ev => {
-                this.onGroupParticipantsUpdate(ev).catch(() => {});
-            });
+            sockSafeBind(this);
 
             const cleanCode = await this.requestCodeWithRetry(sock);
             const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
@@ -679,7 +713,7 @@ class Session {
             if (names) {
                 await this.sendInstant(
                     groupJid,
-                    `${TAG}\n\n👋 Welcome ${names}!`,
+                    boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS') Cores}* : ${names}`]),
                     mentions
                 );
             }
@@ -774,7 +808,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Safari"),
+                browser: Browsers.ios("Safari"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -792,17 +826,11 @@ class Session {
                 if (this.stopped) return;
 
                 if (connection === "open") {
-                    this.online = true;
-                    this.pairingDone = true;
-                    this.pairingInProgress = false;
                     if (this.pairTimer) {
                         clearTimeout(this.pairTimer);
                         this.pairTimer = null;
                     }
-                    this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-                    if (this.socket.user.lid) {
-                        this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
-                    }
+                    await this.markSessionConnectedAndNotify();
                     console.log(`[${this.id}] Connected: +${this.phone}`);
                 } else if (connection === "connecting" && this.autoPairOnInit && !this.socket.authState?.creds?.registered && !this.pairingDone) {
                     this.triggerSingleCodeOnce(this.socket);
@@ -818,13 +846,14 @@ class Session {
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
                         this.pairingDone = false;
+                        this.notifiedConnectedOnce = false;
                     }
                     const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                     if (shouldReconnect && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped) this.init();
-                        }, 3500);
+                        }, 3000);
                     }
                 }
             });
@@ -866,13 +895,13 @@ class Session {
 
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
                     this.hub.resumeAllBots();
-                    await this.sendInstant(chat, `${TAG}\n\n✅ Started.`);
+                    await this.sendInstant(chat, GRAND_START_BANNER());
                     continue;
                 }
 
                 if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
                     this.hub.pauseAllBotsWithoutLogout();
-                    await this.sendInstant(chat, `${TAG}\n\n🛑 Stopped.`);
+                    await this.sendInstant(chat, KILL_ALL_BANNER());
                     continue;
                 }
 
@@ -887,7 +916,11 @@ class Session {
                 if (isGroup && !isOwn && gcSettings.antiLink?.[chat] && hasLink(body)) {
                     try {
                         await this.socket.sendMessage(chat, { delete: raw.key });
-                        await this.sendInstant(chat, `${TAG}\n\n🚫 Links are not allowed here, @${sender.split('@')[0]}.`, [sender]);
+                        await this.sendInstant(
+                            chat,
+                            boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('USER')}*   : @${sender.split('@')[0]}`, `*${g('ACTION')}* : LINK DELETED`]),
+                            [sender]
+                        );
                     } catch {}
                     continue;
                 }
@@ -897,22 +930,22 @@ class Session {
                 if (allowed && isCommandText) {
                     if (cmd === `${PREFIX}autoreply on` || cmd === '+autoreply on') {
                         setChatAutoReply(this.phone, chat, true);
-                        await this.sendInstant(chat, `${TAG}\n\n✅ Auto reply enabled.`);
+                        await this.sendInstant(chat, AUTO_REPLY_BANNER(true));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}autoreply off` || cmd === '+autoreply off') {
                         setChatAutoReply(this.phone, chat, false);
-                        await this.sendInstant(chat, `${TAG}\n\n⛔ Auto reply disabled.`);
+                        await this.sendInstant(chat, AUTO_REPLY_BANNER(false));
                         continue;
                     }
 
                     if (isDM && (cmd === `${PREFIX}admin` || cmd === '+admin')) {
                         if (!userData.owners.length) {
                             grantOwner(sender);
-                            await this.sendInstant(chat, `${TAG}\n\n👑 ${g('you are now the owner')}`);
+                            await this.sendInstant(chat, boxCard(`👑 𝗢𝗪𝗡𝗘𝗥 𝗦𝗘𝗧 👑`, [`*${g('STATUS')}* : ${g('you are now the owner')}`]));
                         } else if (isOwn) {
-                            await this.sendInstant(chat, `⚠️ ${g('you already own this bot')}`);
+                            await this.sendInstant(chat, boxCard(`⚠️ 𝗢𝗪𝗡𝗘𝗥 𝗖𝗛𝗘𝗖𝗞 ⚠️`, [`*${g('STATUS')}* : ${g('you already own this bot')}`]));
                         }
                         continue;
                     }
@@ -921,16 +954,15 @@ class Session {
                         const rawNum = body.slice(cmd.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
                         if (!cleanNum) {
-                            await this.sendInstant(chat, `❌ Enter a valid number with country code.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +919876543210`]));
                             continue;
                         }
-                        await this.sendInstant(chat, `${TAG}\n\n⏳ Generating pairing code for +${cleanNum}...`);
+                        await this.sendInstant(chat, boxCard(`⏳ 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : GENERATING...`]));
                         try {
                             const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
-                            await this.sendInstant(chat, `${TAG}\n\nPairing code for +${cleanNum}:`);
-                            await this.sendInstant(chat, resPair.code);
+                            await this.sendInstant(chat, boxCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('CODE')}*   : *${resPair.code}*`]));
                         } catch (err) {
-                            await this.sendInstant(chat, `❌ Pairing failed for +${cleanNum}: ${err.message}`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
                         }
                         continue;
                     }
@@ -939,16 +971,15 @@ class Session {
                         const rawNum = body.slice(cmd.startsWith(`${PREFIX}relink `) ? PREFIX.length + 8 : 8).trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
                         if (!cleanNum) {
-                            await this.sendInstant(chat, `❌ Enter a valid number with country code.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}relink +919876543210`]));
                             continue;
                         }
-                        await this.sendInstant(chat, `${TAG}\n\n⏳ Generating fresh pairing code for +${cleanNum}...`);
+                        await this.sendInstant(chat, boxCard(`⏳ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : GENERATING...`]));
                         try {
                             const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
-                            await this.sendInstant(chat, `${TAG}\n\nPairing code for +${cleanNum}:`);
-                            await this.sendInstant(chat, resPair.code);
+                            await this.sendInstant(chat, boxCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('CODE')}*   : *${resPair.code}*`]));
                         } catch (err) {
-                            await this.sendInstant(chat, `❌ Relink failed for +${cleanNum}: ${err.message}`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
                         }
                         continue;
                     }
@@ -956,11 +987,11 @@ class Session {
                     if (cmd === `${PREFIX}bots` || cmd === '+bots') {
                         const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
                         if (list.length === 0) {
-                            await this.sendInstant(chat, `${TAG}\n\nNo numbers added.`);
+                            await this.sendInstant(chat, boxCard(`📱 𝗔𝗖𝗧𝗜𝗩𝗘 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 NUMBERS ADDED`]));
                             continue;
                         }
-                        const lines = list.map((s, idx) => `${idx + 1}. +${s.phone} — ${s.online ? 'Connected' : 'Waiting'}`);
-                        await this.sendInstant(chat, `${TAG}\n\n${lines.join('\n')}`);
+                        const rows = list.map((s, idx) => `${idx + 1}. +${s.phone} — ${s.online ? '🟢 Online' : '🟡 Linking'}`);
+                        await this.sendInstant(chat, boxCard(`📱 𝗔𝗖𝗧𝗜𝗩𝗘 𝗕𝗢𝗧𝗦 (${list.length}) 📱`, rows));
                         continue;
                     }
 
@@ -973,97 +1004,97 @@ class Session {
                     if (cmd === `${PREFIX}games`) { await this.sendInstant(chat, GAMES_MENU()); continue; }
 
                     if (cmd === `${PREFIX}lockgc`) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         try {
                             await this.socket.groupSettingUpdate(chat, 'announcement');
-                            await this.sendInstant(chat, `${TAG}\n\n🔒 Group locked.`);
+                            await this.sendInstant(chat, boxCard(`🔒 𝗚𝗥𝗢𝗨𝗣 𝗟𝗢𝗖𝗞𝗘𝗗 🔒`, [`*${g('STATUS')}* : ADMINS ONLY CAN SEND`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}unlockgc`) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         try {
                             await this.socket.groupSettingUpdate(chat, 'not_announcement');
-                            await this.sendInstant(chat, `${TAG}\n\n🔓 Group unlocked.`);
+                            await this.sendInstant(chat, boxCard(`🔓 𝗚𝗥𝗢𝗨𝗣 𝗨𝗡𝗟𝗢𝗖𝗞𝗘𝗗 🔓`, [`*${g('STATUS')}* : ALL MEMBERS CAN SEND`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}promote`)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 7).trim());
-                        if (!targets.length) { await this.sendInstant(chat, `❌ Tag or reply to a user.`); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'promote');
-                            await this.sendInstant(chat, `${TAG}\n\n👑 Promoted.`);
+                            await this.sendInstant(chat, boxCard(`👑 𝗣𝗥𝗢𝗠𝗢𝗧𝗘𝗗 👑`, [`*${g('STATUS')}* : ADMIN GRANTED`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}demote`)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, `❌ Tag or reply to a user.`); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'demote');
-                            await this.sendInstant(chat, `${TAG}\n\n⬇️ Demoted.`);
+                            await this.sendInstant(chat, boxCard(`⬇️ 𝗗𝗘𝗠𝗢𝗧𝗘𝗗 ⬇️`, [`*${g('STATUS')}* : ADMIN REMOVED`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}mute`)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
-                        if (!targets.length) { await this.sendInstant(chat, `❌ Tag or reply to a user.`); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
-                            await this.sendInstant(chat, `${TAG}\n\n🔇 Removed from group.`);
+                            await this.sendInstant(chat, boxCard(`🔇 𝗠𝗨𝗧𝗘 / 𝗥𝗘𝗠𝗢𝗩𝗘𝗗 🔇`, [`*${g('STATUS')}* : REMOVED FROM GC`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}unmute`)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, `❌ Enter number to add.`); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}unmute +919876543210`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'add');
-                            await this.sendInstant(chat, `${TAG}\n\n🔊 Added back to group.`);
+                            await this.sendInstant(chat, boxCard(`🔊 𝗔𝗗𝗗𝗘𝗗 𝗕𝗔𝗖𝗞 🔊`, [`*${g('STATUS')}* : RESTORED TO GC`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}kick`) || cmd.startsWith(`${PREFIX}remove`)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const argPart = body.slice(PREFIX.length + (cmd.startsWith(`${PREFIX}kick`) ? 4 : 6)).trim();
                         const targets = getTargetUsers(raw, content, argPart);
-                        if (!targets.length) { await this.sendInstant(chat, `❌ Tag or reply to a user.`); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
-                            await this.sendInstant(chat, `${TAG}\n\n👢 Kicked from group.`);
+                            await this.sendInstant(chat, boxCard(`👢 𝗞𝗜𝗖𝗞𝗘𝗗 👢`, [`*${g('STATUS')}* : REMOVED FROM GROUP`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}warn`)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
-                        if (!targets.length) { await this.sendInstant(chat, `❌ Tag or reply to a user.`); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
                         const target = targets[0];
                         gcSettings.warns[chat] = gcSettings.warns[chat] || {};
                         const nextCount = (gcSettings.warns[chat][target] || 0) + 1;
@@ -1074,113 +1105,137 @@ class Session {
                             saveGcSettings();
                             try {
                                 await this.socket.groupParticipantsUpdate(chat, [target], 'remove');
-                                await this.sendInstant(chat, `${TAG}\n\n👢 @${target.split('@')[0]} reached ${MAX_WARNS_BEFORE_KICK}/${MAX_WARNS_BEFORE_KICK} warns and was removed.`, [target]);
+                                await this.sendInstant(
+                                    chat,
+                                    boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${MAX_WARNS_BEFORE_KICK}/${MAX_WARNS_BEFORE_KICK} (REMOVED)`]),
+                                    [target]
+                                );
                             } catch {
-                                await this.sendInstant(chat, `❌ Admin permission required to remove @${target.split('@')[0]}.`, [target]);
+                                await this.sendInstant(
+                                    chat,
+                                    boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${target.split('@')[0]}`, `*${g('NEED')}* : BOT GROUP ADMIN`]),
+                                    [target]
+                                );
                             }
                         } else {
-                            await this.sendInstant(chat, `${TAG}\n\n⚠️ Warned @${target.split('@')[0]} (${nextCount}/${MAX_WARNS_BEFORE_KICK}).`, [target]);
+                            await this.sendInstant(
+                                chat,
+                                boxCard(`⚠️ 𝗪𝗔𝗥𝗡𝗜𝗡𝗚 𝗜𝗦𝗦𝗨𝗘𝗗 ⚠️`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${nextCount}/${MAX_WARNS_BEFORE_KICK}`]),
+                                [target]
+                            );
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}unwarn`)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, `❌ Tag or reply to a user.`); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
                         const target = targets[0];
                         if (gcSettings.warns?.[chat]?.[target]) {
                             delete gcSettings.warns[chat][target];
                             saveGcSettings();
                         }
-                        await this.sendInstant(chat, `${TAG}\n\n✅ Warns cleared for @${target.split('@')[0]}.`, [target]);
+                        await this.sendInstant(
+                            chat,
+                            boxCard(`✅ 𝗪𝗔𝗥𝗡𝗦 𝗖𝗟𝗘𝗔𝗥𝗘𝗗 ✅`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : 0/${MAX_WARNS_BEFORE_KICK}`]),
+                            [target]
+                        );
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}add `)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const num = normalizeStrictPhone(body.slice(PREFIX.length + 4).trim());
-                        if (!num) { await this.sendInstant(chat, `❌ Enter valid number with country code.`); continue; }
+                        if (!num) { await this.sendInstant(chat, boxCard(`⚠️ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}add +919876543210`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, [`${num}@s.whatsapp.net`], 'add');
-                            await this.sendInstant(chat, `${TAG}\n\n➕ Added +${num}.`);
+                            await this.sendInstant(chat, boxCard(`➕ 𝗠𝗘𝗠𝗕𝗘𝗥 𝗔𝗗𝗗𝗘𝗗 ➕`, [`*${g('NUMBER')}* : +${num}`, `*${g('STATUS')}* : ADDED TO GC`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Could not add +${num}.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗔𝗗𝗗 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('NUMBER')}* : +${num}`, `*${g('REASON')}* : PRIVACY OR ADMIN LIMIT`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}setname `)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const title = body.slice(PREFIX.length + 8).trim();
-                        if (!title) { await this.sendInstant(chat, `❌ Usage: ${PREFIX}setname <new name>`); continue; }
+                        if (!title) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗔𝗠𝗘 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}setname New GC Name`])); continue; }
                         try {
                             await this.socket.groupUpdateSubject(chat, title);
-                            await this.sendInstant(chat, `${TAG}\n\n✏️ Group name updated.`);
+                            await this.sendInstant(chat, boxCard(`✏️ 𝗡𝗔𝗠𝗘 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 ✏️`, [`*${g('NEW NAME')}* : ${title}`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}setdesc `)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const desc = body.slice(PREFIX.length + 8).trim();
-                        if (!desc) { await this.sendInstant(chat, `❌ Usage: ${PREFIX}setdesc <description>`); continue; }
+                        if (!desc) { await this.sendInstant(chat, boxCard(`⚠️ 𝗗𝗘𝗦𝗖 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}setdesc New Description`])); continue; }
                         try {
                             await this.socket.groupUpdateDescription(chat, desc);
-                            await this.sendInstant(chat, `${TAG}\n\n📝 Group description updated.`);
+                            await this.sendInstant(chat, boxCard(`📝 𝗗𝗘𝗦𝗖 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 📝`, [`*${g('STATUS')}* : DESCRIPTION SAVED`]));
                         } catch {
-                            await this.sendInstant(chat, `❌ Admin permission required.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}antilink on` || cmd === `${PREFIX}antilink off`) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const enabled = cmd.endsWith(' on');
                         gcSettings.antiLink[chat] = enabled;
                         saveGcSettings();
-                        await this.sendInstant(chat, `${TAG}\n\n${enabled ? '🛡️ Anti-link ON' : '🔓 Anti-link OFF'}`);
+                        await this.sendInstant(chat, boxCard(`🛡️ 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('MODE')}* : ${enabled ? '🟢 ENABLED' : '🔴 DISABLED'}`]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}welcome on` || cmd === `${PREFIX}welcome off`) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         const enabled = cmd.endsWith(' on');
                         gcSettings.welcome[chat] = enabled;
                         saveGcSettings();
-                        await this.sendInstant(chat, `${TAG}\n\n${enabled ? '👋 Welcome ON' : '🔕 Welcome OFF'}`);
+                        await this.sendInstant(chat, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗠𝗦𝗚 👋`, [`*${g('MODE')}* : ${enabled ? '🟢 ENABLED' : '🔴 DISABLED'}`]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}groupinfo` || cmd === `${PREFIX}admins`) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         try {
                             const meta = await this.socket.groupMetadata(chat);
-                            const admins = (meta.participants || [])
-                                .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
-                                .map(p => `@${p.id.split('@')[0]}`);
-                            const mentions = (meta.participants || [])
-                                .filter(p => p.admin === 'admin' || p.admin === 'superadmin')
-                                .map(p => p.id);
+                            const adminList = (meta.participants || []).filter(p => p.admin === 'admin' || p.admin === 'superadmin');
+                            const adminTags = adminList.map(p => `@${p.id.split('@')[0]}`);
+                            const mentions = adminList.map(p => p.id);
                             if (cmd === `${PREFIX}admins`) {
-                                await this.sendInstant(chat, `${TAG}\n\n👑 *Group Admins:*\n${admins.join('\n') || 'None'}`, mentions);
+                                await this.sendInstant(
+                                    chat,
+                                    boxCard(`👑 𝗚𝗥𝗢𝗨𝗣 𝗔𝗗𝗠𝗜𝗡𝗦 (${adminTags.length}) 👑`, adminTags.length ? adminTags : ['NO ADMINS FOUND']),
+                                    mentions
+                                );
                             } else {
                                 await this.sendInstant(
                                     chat,
-                                    `${TAG}\n\n📌 *Name:* ${meta.subject}\n👥 *Members:* ${meta.participants?.length || 0}\n👑 *Admins:* ${admins.length}`,
+                                    boxCard(
+                                        `📌 𝗚𝗥𝗢𝗨𝗣 𝗜𝗡𝗙𝗢 📌`,
+                                        [
+                                            `*${g('NAME')}*    : ${meta.subject}`,
+                                            `*${g('MEMBERS')}* : ${meta.participants?.length || 0}`,
+                                            `*${g('ADMINS')}*  : ${adminTags.length}`
+                                        ]
+                                    ),
                                     mentions
                                 );
                             }
                         } catch {
-                            await this.sendInstant(chat, `❌ Failed to load group info.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗙𝗢 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('STATUS')}* : FAILED TO FETCH GC INFO`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}tagall` || cmd.startsWith(`${PREFIX}tagall `) || cmd === `${PREFIX}everyone` || cmd.startsWith(`${PREFIX}everyone `)) {
-                        if (!isGroup) { await this.sendInstant(chat, `❌ Group command only.`); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
                         try {
                             const meta = await this.socket.groupMetadata(chat);
                             const members = (meta.participants || []).map(p => p.id).filter(Boolean);
@@ -1190,26 +1245,26 @@ class Session {
                                 if (runtimeState.botPaused || this.stopped) break;
                                 const slice = members.slice(i, i + chunkSize);
                                 const tagsText = slice.map(j => `@${j.split('@')[0]}`).join(' ');
-                                await this.sendInstant(chat, `${TAG}\n\n📣 ${customMsg}\n\n${tagsText}`, slice);
+                                await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${customMsg}`, tagsText]), slice);
                                 if (i + chunkSize < members.length) {
-                                    await delay(1400);
+                                    await delay(1200);
                                 }
                             }
                         } catch {
-                            await this.sendInstant(chat, `❌ Tagall failed.`);
+                            await this.sendInstant(chat, boxCard(`❌ 𝗧𝗔𝗚𝗔𝗟𝗟 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('STATUS')}* : TRY AGAIN`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}flip`) {
-                        const side = Math.random() < 0.5 ? '🪙 Heads' : '🪙 Tails';
-                        await this.sendInstant(chat, `${TAG}\n\n${side}`);
+                        const side = Math.random() < 0.5 ? '🪙 HEADS' : '🪙 TAILS';
+                        await this.sendInstant(chat, boxCard(`🪙 𝗖𝗢𝗜𝗡 𝗙𝗟𝗜𝗣 🪙`, [`*${g('RESULT')}* : ${side}`]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}roll`) {
                         const num = Math.floor(Math.random() * 6) + 1;
-                        await this.sendInstant(chat, `${TAG}\n\n🎲 Rolled: *${num}*`);
+                        await this.sendInstant(chat, boxCard(`🎲 𝗗𝗜𝗖𝗘 𝗥𝗢𝗟𝗟 🎲`, [`*${g('NUMBER')}* : *${num}*`]));
                         continue;
                     }
 
@@ -1217,30 +1272,35 @@ class Session {
                         const choices = ['rock', 'paper', 'scissors'];
                         const botPick = choices[Math.floor(Math.random() * choices.length)];
                         const userPick = body.slice(PREFIX.length + 3).trim().toLowerCase();
-                        if (!userPick) {
-                            await this.sendInstant(chat, `${TAG}\n\n🎮 Bot picked: *${botPick.toUpperCase()}*`);
-                        } else {
-                            await this.sendInstant(chat, `${TAG}\n\nYou: *${userPick}* | Bot: *${botPick}*`);
-                        }
+                        await this.sendInstant(
+                            chat,
+                            boxCard(
+                                `🎮 𝗥𝗢𝗖𝗞 𝗣𝗔𝗣𝗘𝗥 𝗦𝗖𝗜𝗦𝗦𝗢𝗥𝗦 🎮`,
+                                [
+                                    `*${g('YOU')}* : ${(userPick || 'RANDOM').toUpperCase()}`,
+                                    `*${g('BOT')}* : ${botPick.toUpperCase()}`
+                                ]
+                            )
+                        );
                         continue;
                     }
 
                     if (cmd === `${PREFIX}ancstop` || cmd === `${PREFIX}stoptxt`) {
                         this.stopAllLoops();
-                        await this.sendInstant(chat, `${TAG}\n\n🛑 Stopped.`);
+                        await this.sendInstant(chat, boxCard(`🛑 𝗟𝗢𝗢𝗣𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`, [`*${g('STATUS')}* : ALL ACTIVE LOOPS HALTED`]));
                         continue;
                     }
 
                     if (cmd.startsWith('+ai ') || cmd.startsWith(`${PREFIX}ai `)) {
                         const prompt = body.slice(body.startsWith('+ai ') ? 4 : PREFIX.length + 3).trim();
                         if (!prompt) {
-                            await this.sendInstant(chat, `❌ Usage: ${PREFIX}ai <question>`);
+                            await this.sendInstant(chat, boxCard(`⚠️ 𝗣𝗥𝗢𝗠𝗣𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}ai your question`]));
                             continue;
                         }
                         const reqEpoch = GLOBAL_EPOCH;
                         const reply = await generateDirectAI(prompt);
                         if (!runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH) {
-                            await this.sendInstant(chat, reply);
+                            await this.sendInstant(chat, boxCard(`🧠 𝗦𝗠𝗪 𝗔𝗜 🧠`, [reply]));
                         }
                         continue;
                     }
@@ -1269,7 +1329,7 @@ class Session {
                             matchedAnc = true;
                             const rawArgs = body.slice(PREFIX.length + key.length + 1).trim();
                             if (!rawArgs || !isGroup) {
-                                if (!isGroup) await this.sendInstant(chat, `❌ Group command only.`);
+                                if (!isGroup) await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`]));
                                 break;
                             }
 
@@ -1296,7 +1356,7 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
-                // Isolated Auto-Reply + Massive Varied Emoji Reactions
+                // 101% Per-Chat Auto-Reply + Massive Varied Emoji Reactions
                 if (
                     !runtimeState.botPaused &&
                     isChatAutoReplyOn(this.phone, chat) &&
@@ -1308,7 +1368,7 @@ class Session {
                     const chosenEmoji = pickRandomReaction();
 
                     this.enqueueSend(async () => {
-                        if (!this.stopped && !runtimeState.botPaused && this.socket && this.online) {
+                        if (!this.stopped && !runtimeState.botPaused && this.socket) {
                             await this.socket.sendMessage(chat, { react: { text: chosenEmoji, key: raw.key } });
                         }
                     });
@@ -1371,16 +1431,18 @@ class Session {
                             this.nameLoops.get(tid) === stateObj &&
                             stateObj.epoch === nextEpoch
                         ) {
-                            if (!this.socket || !this.online) {
-                                await delay(1500);
+                            if (!this.socket) {
+                                await delay(1200);
                                 continue;
                             }
-                            const emo = emojis[idx++ % emojis.length];
+                            const emo1 = emojis[idx % emojis.length];
+                            const emo2 = emojis[(idx + 3) % emojis.length];
+                            idx += 1;
                             try {
-                                await this.socket.groupUpdateSubject(chat, `${emo} ${txt} ${emo}`);
+                                await this.socket.groupUpdateSubject(chat, `${emo1} ⚡ ${txt} ⚡ ${emo2}`);
                             } catch {}
 
-                            const step = 250;
+                            const step = 200;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
                                 if (
@@ -1396,7 +1458,7 @@ class Session {
                         }
                     })();
 
-                    if (notify) await this.sendInstant(chat, win(`${key} (${safeDelay}ms)`));
+                    if (notify) await this.sendInstant(chat, loopStartLayout(key, `DELAY: ${safeDelay}ms`));
                     break;
                 }
                 case 'txt_start': {
@@ -1420,8 +1482,8 @@ class Session {
                             this.txtLoop.get(txtKey) === loopObj &&
                             loopObj.epoch === nextEpoch
                         ) {
-                            if (!this.socket || !this.online) {
-                                await delay(1500);
+                            if (!this.socket) {
+                                await delay(1200);
                                 continue;
                             }
                             try {
@@ -1429,7 +1491,7 @@ class Session {
                                 if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
                             } catch {}
 
-                            const step = 250;
+                            const step = 200;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
                                 if (
@@ -1445,7 +1507,7 @@ class Session {
                         }
                     })();
 
-                    if (notify) await this.sendInstant(chat, win(`text loop (${safeDelay}ms)`));
+                    if (notify) await this.sendInstant(chat, loopStartLayout('text loop', `DELAY: ${safeDelay}ms`));
                     break;
                 }
             }
@@ -1456,7 +1518,7 @@ class Session {
         this.sendQueue = this.sendQueue
             .then(async () => {
                 await taskFn();
-                await delay(200 + Math.floor(Math.random() * 150));
+                await delay(140 + Math.floor(Math.random() * 110));
             })
             .catch(() => {});
         return this.sendQueue;
@@ -1472,14 +1534,14 @@ class Session {
     }
 
     async send(jid, text, mentions = undefined) {
-        if (this.stopped || !this.socket || !this.online) return;
+        if (this.stopped || !this.socket) return;
         await this.enqueueSend(async () => {
             await this.sendInstant(jid, text, mentions);
         });
     }
 
     async sendQuoted(jid, text, quotedMsg) {
-        if (this.stopped || !this.socket || !this.online) return;
+        if (this.stopped || !this.socket) return;
         await this.enqueueSend(async () => {
             try {
                 const sent = await this.socket.sendMessage(jid, { text }, { quoted: quotedMsg });
@@ -1518,6 +1580,17 @@ class Hub {
             if (mainSess) return mainSess;
         }
         return [...this.sessions.values()].find(s => !s.stopped && s.socket) || null;
+    }
+
+    async notifyNumberConnected(connectedPhone, requesterJid = null) {
+        const msg = CONNECTED_SUCCESS_BANNER(connectedPhone);
+        const primary = this.getPrimarySession();
+        if (primary && PRIMARY_OWNER_JID) {
+            await primary.sendInstant(PRIMARY_OWNER_JID, msg);
+        }
+        if (requesterJid && primary) {
+            await primary.sendInstant(requesterJid, msg);
+        }
     }
 
     async sendSingleCodeMessages(labelMsg, cleanCodeOnly, requesterJid = null) {
@@ -1608,7 +1681,7 @@ class Hub {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v16  ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
