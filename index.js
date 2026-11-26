@@ -83,13 +83,14 @@ const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [PRIMARY_OWNER_JID] : [];
 // ─────────────────────────────────────────────
 //  STORAGE PATHS & CONFIG
 // ─────────────────────────────────────────────
-const PATH_AUTH   = (phone) => `./sessions/smw_session_${phone}`;
-const PATH_USERS  = './store/users.json';
-const PATH_TIMING = './store/timing.json';
-const PATH_PREFIX = './store/prefix.json';
-const PATH_BOTS   = './store/bots.json';
-const PATH_STATE  = './store/state.json';
-const PATH_GC     = './store/gc_settings.json';
+const PATH_AUTH      = (phone) => `./sessions/smw_session_${phone}`;
+const PATH_USERS     = './store/users.json';
+const PATH_TIMING    = './store/timing.json';
+const PATH_PREFIX    = './store/prefix.json';
+const PATH_BOTS      = './store/bots.json';
+const PATH_USER_BOTS = './store/user_bots.json';
+const PATH_STATE     = './store/state.json';
+const PATH_GC        = './store/gc_settings.json';
 
 try {
     fs.mkdirSync('./store', { recursive: true });
@@ -121,18 +122,20 @@ const writeJson = (p, d) => {
     } catch {}
 };
 
-let userData   = readJson(PATH_USERS, { owners: [], subs: {} });
-let timingMap  = readJson(PATH_TIMING, {
+let userData     = readJson(PATH_USERS, { owners: [], subs: {} });
+let userBotsMap  = readJson(PATH_USER_BOTS, {});
+let timingMap    = readJson(PATH_TIMING, {
     anc1: DEFAULT_LOOP_MS, anc2: DEFAULT_LOOP_MS, anc3: DEFAULT_LOOP_MS,
     anc4: DEFAULT_LOOP_MS, anc5: DEFAULT_LOOP_MS, anc6: DEFAULT_LOOP_MS, anc7: DEFAULT_LOOP_MS
 });
-let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
-let PREFIX     = prefixData.prefix || '!';
-let gcSettings = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
+let prefixData   = readJson(PATH_PREFIX, { prefix: '!' });
+let PREFIX       = prefixData.prefix || '!';
+let gcSettings   = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
 
 if (!gcSettings.antiLink) gcSettings.antiLink = {};
 if (!gcSettings.welcome) gcSettings.welcome = {};
 if (!gcSettings.warns) gcSettings.warns = {};
+if (!userBotsMap || typeof userBotsMap !== 'object') userBotsMap = {};
 
 let GLOBAL_EPOCH = 1;
 const PRINTED_LOG_OTPS = new Set();
@@ -155,6 +158,22 @@ function saveRuntimeState() {
 
 function saveGcSettings() {
     try { writeJson(PATH_GC, gcSettings); } catch {}
+}
+
+function sanitizeUserId(rawUserId) {
+    const clean = String(rawUserId || 'user-1').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
+    return clean || 'user-1';
+}
+
+function recordUserNumber(rawUserId, phone) {
+    const uk = sanitizeUserId(rawUserId);
+    const cleanNum = normalizeStrictPhone(phone);
+    if (!cleanNum) return;
+    if (!Array.isArray(userBotsMap[uk])) userBotsMap[uk] = [];
+    if (!userBotsMap[uk].includes(cleanNum)) {
+        userBotsMap[uk].unshift(cleanNum);
+    }
+    writeJson(PATH_USER_BOTS, userBotsMap);
 }
 
 function normalizeChatKey(chatJid) {
@@ -260,13 +279,22 @@ async function generateDirectAI(userPrompt) {
 }
 
 // ─────────────────────────────────────────────
-//  KEEP-ALIVE SERVER
+//  EXPRESS GATEWAY + KEEP-ALIVE SERVER
 // ─────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(express.json({ limit: '256kb' }));
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+});
+
 app.get('/health', (_req, res) => {
-    res.status(200).send('OK');
+    res.status(200).json({ ok: true, service: 'SMW WhatsApp Panel v18.8', paused: runtimeState.botPaused });
 });
 
 function startKeepAlive() {
@@ -308,7 +336,6 @@ const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join(''
 
 const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
 
-// Strict hard-board wrapper designed so every line wraps cleanly on any screen size
 function sanitizeBoardLine(line) {
     return String(line ?? '').replace(/\r?\n+/g, ' / ').trim();
 }
@@ -519,7 +546,6 @@ class Session {
         this.selfLid = null;
         this.otpPrinted = false;
 
-        // Smart pairing & connection lifecycle states
         this.pairingBusy = false;
         this.connecting = false;
         this.authenticated = false;
@@ -768,7 +794,6 @@ class Session {
                         return;
                     }
 
-                    // Keep linking handshake clean while pairingBusy is active
                     if (!this.pairingBusy) {
                         this.scheduleReconnect('close');
                     }
@@ -1021,7 +1046,8 @@ class Session {
                             continue;
                         }
                         try {
-                            const code = await this.hub.addNumberInChat(cleanNum, chat);
+                            recordUserNumber(sender.split('@')[0], cleanNum);
+                            const code = await this.hub.addNumberInChat(cleanNum, chat, sender.split('@')[0]);
                             await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, code));
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
@@ -1037,7 +1063,8 @@ class Session {
                             continue;
                         }
                         try {
-                            const code = await this.hub.addNumberInChat(cleanNum, chat);
+                            recordUserNumber(sender.split('@')[0], cleanNum);
+                            const code = await this.hub.addNumberInChat(cleanNum, chat, sender.split('@')[0]);
                             await this.sendInstant(chat, pairingCodeCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, cleanNum, code));
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
@@ -1638,9 +1665,11 @@ class Hub {
         writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
     }
 
-    async addNumberInChat(phone, requesterJid = null) {
+    async addNumberInChat(phone, requesterJid = null, userId = 'user-1') {
         const clean = normalizeStrictPhone(phone);
         if (!clean) throw new Error('Invalid phone number');
+
+        recordUserNumber(userId, clean);
 
         const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
         if (!isTargetPrimary) {
@@ -1720,6 +1749,90 @@ process.on('unhandledRejection', err => {
 });
 
 const hub = new Hub();
+
+// REST API FOR APK / HTML DASHBOARD
+app.post('/api/pair', async (req, res) => {
+    try {
+        const cleanPhone = normalizeStrictPhone(req.body?.phone);
+        const userId = sanitizeUserId(req.body?.userId);
+        if (!cleanPhone) {
+            return res.status(400).json({ ok: false, error: 'Invalid Indian or International phone number' });
+        }
+        const code = await hub.addNumberInChat(cleanPhone, null, userId);
+        return res.json({ ok: true, phone: cleanPhone, userId, code });
+    } catch (err) {
+        return res.status(500).json({ ok: false, error: err?.message || 'Pairing failed' });
+    }
+});
+
+app.get('/api/bots', (req, res) => {
+    const userId = sanitizeUserId(req.query?.userId);
+    const allowedNums = Array.isArray(userBotsMap[userId]) ? userBotsMap[userId] : null;
+    const activeSessions = [...hub.sessions.values()].filter(s => !s.stopped);
+    const filtered = allowedNums && allowedNums.length > 0
+        ? activeSessions.filter(s => allowedNums.includes(s.phone))
+        : activeSessions;
+
+    return res.json({
+        ok: true,
+        userId,
+        bots: filtered.map(s => ({
+            phone: s.phone,
+            online: Boolean(s.online),
+            sessionReady: Boolean(s.sessionReady)
+        }))
+    });
+});
+
+app.post('/api/command', async (req, res) => {
+    try {
+        const rawCmd = String(req.body?.command || '').trim();
+        const userId = sanitizeUserId(req.body?.userId);
+        const lower = rawCmd.toLowerCase();
+
+        if (!rawCmd) {
+            return res.status(400).json({ ok: false, error: 'Empty command' });
+        }
+
+        if (lower === `${PREFIX}start` || lower === '+start') {
+            hub.resumeAllBots();
+            return res.json({ ok: true, reply: GRAND_START_BANNER() });
+        }
+
+        if (lower === `${PREFIX}killall` || lower === '-all') {
+            hub.pauseAllBotsKeepSessionAlive();
+            return res.json({ ok: true, reply: KILL_ALL_BANNER() });
+        }
+
+        if (lower === `${PREFIX}menu` || lower === '+menu') {
+            return res.json({ ok: true, reply: MENU_TEXT() });
+        }
+
+        if (lower === `${PREFIX}bots` || lower === '+bots') {
+            const allowedNums = Array.isArray(userBotsMap[userId]) ? userBotsMap[userId] : null;
+            const list = [...hub.sessions.values()].filter(s =>
+                !s.stopped && (!allowedNums || !allowedNums.length || allowedNums.includes(s.phone))
+            );
+            return res.json({
+                ok: true,
+                reply: list.length ? BOTS_LIST_BANNER(list) : boxCard(`📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 ${g('NUMBERS ADDED')}`])
+            });
+        }
+
+        if (lower.startsWith(`${PREFIX}ai `) || lower.startsWith('+ai ')) {
+            const prompt = rawCmd.slice(lower.startsWith('+ai ') ? 4 : PREFIX.length + 3).trim();
+            const aiText = await generateDirectAI(prompt || 'Hello');
+            return res.json({ ok: true, reply: boxCard(`🧠 𝗦𝗠𝗪 𝗔𝗜 🧠`, [aiText]) });
+        }
+
+        return res.json({
+            ok: true,
+            reply: boxCard(`⚡ 𝗖𝗠𝗗 𝗥𝗘𝗖𝗘𝗜𝗩𝗘𝗗 ⚡`, [`*${g('USER')}* : ${g(userId)}`, `*${g('CMD')}*  : ${rawCmd}`])
+        });
+    } catch (err) {
+        return res.status(500).json({ ok: false, error: err?.message || 'Command failed' });
+    }
+});
 
 process.on('SIGTERM', async () => {
     console.log('[SHUTDOWN] SIGTERM received, closing sockets cleanly...');
