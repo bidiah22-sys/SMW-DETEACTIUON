@@ -1,5 +1,5 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.3                        ║
+// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.4                        ║
 // ║          Multi-Bot WhatsApp Manager & Loop Engine            ║
 // ╚══════════════════════════════════════════════════════════════╝
 
@@ -132,6 +132,7 @@ if (!gcSettings.warns) gcSettings.warns = {};
 
 let GLOBAL_EPOCH = 1;
 const PRINTED_LOG_OTPS = new Set();
+let cachedBaileysVersion = null;
 
 // Bot starts PAUSED until user sends !start / +start
 let runtimeState = readJson(PATH_STATE, {
@@ -316,7 +317,7 @@ const GRAND_START_BANNER = () => boxCard(
         `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
         `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
         `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`,
-        `*${g('PAIRING')}*     : 📱 ${g('DIRECT CHAT CODE READY')}`
+        `*${g('PAIRING')}*     : 📱 ${g('INSTANT CHAT CODE READY')}`
     ]
 );
 
@@ -346,7 +347,7 @@ const BOTS_LIST_BANNER = (list) => boxCard(
 );
 
 const MENU_TEXT = () => boxCard(
-    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.3 🚩`,
+    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.4 🚩`,
     [
         `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
         `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
@@ -456,14 +457,19 @@ function hasLink(text) {
     return /(https?:\/\/|www\.|chat\.whatsapp\.com\/|t\.me\/|instagram\.com\/|youtube\.com\/|youtu\.be\/)/i.test(text || '');
 }
 
-async function resolveBaileysVersionSafe() {
+async function getFastVersion() {
+    if (cachedBaileysVersion) return cachedBaileysVersion;
     try {
-        const versionPromise = fetchLatestBaileysVersion();
-        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 4000));
-        const res = await Promise.race([versionPromise, timeoutPromise]);
-        if (res?.version) return res.version;
+        const p = fetchLatestBaileysVersion();
+        const t = new Promise(resolve => setTimeout(() => resolve(null), 2500));
+        const res = await Promise.race([p, t]);
+        if (res?.version) {
+            cachedBaileysVersion = res.version;
+            return res.version;
+        }
     } catch {}
-    return [2, 3000, 1015901307];
+    cachedBaileysVersion = [2, 3000, 1015901307];
+    return cachedBaileysVersion;
 }
 
 // ═════════════════════════════════════════════
@@ -485,7 +491,6 @@ class Session {
         this.pairingBusy = false;
 
         this.reconnectTimer = null;
-        this.pairingWatchdog = null;
         this.dedupeTimer = null;
         this.stopped = false;
         this.sendQueue = Promise.resolve();
@@ -514,7 +519,6 @@ class Session {
 
     clearTimers() {
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
-        if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
         if (this.dedupeTimer) { clearInterval(this.dedupeTimer); this.dedupeTimer = null; }
     }
 
@@ -533,24 +537,16 @@ class Session {
         this.lastAutoReplyAt.clear();
     }
 
-    closeCurrentSocketOnly() {
-        if (!this.socket) return;
-        try {
-            if (this.socket.ev?.removeAllListeners) this.socket.ev.removeAllListeners();
-        } catch {}
-        try {
-            if (this.socket.ws?.close) this.socket.ws.close();
-            if (this.socket.end) this.socket.end(undefined);
-        } catch {}
-        this.socket = null;
-    }
-
     async destroySession() {
         this.stopped = true;
         this.online = false;
         this.clearTimers();
         this.stopAllLoops();
-        this.closeCurrentSocketOnly();
+        try {
+            if (this.socket?.ev?.removeAllListeners) this.socket.ev.removeAllListeners();
+            if (this.socket?.ws?.close) this.socket.ws.close();
+        } catch {}
+        this.socket = null;
         removeDirSafe(this.getAuthDir());
     }
 
@@ -566,7 +562,7 @@ class Session {
         let lastErr = null;
         for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(1400 * attempt);
+                await delay(800 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '')
                     .replace(/[^A-Z0-9]/gi, '')
@@ -592,14 +588,6 @@ class Session {
         console.log(`╚══════════════════════════════════════════════╝\n`);
     }
 
-    armPairingWatchdog() {
-        if (this.pairingWatchdog) clearTimeout(this.pairingWatchdog);
-        this.pairingWatchdog = setTimeout(() => {
-            if (this.stopped || this.online) return;
-            this.pairingBusy = false;
-        }, 90000);
-    }
-
     async pairFreshInChat() {
         if (!this.phone) throw new Error('Invalid phone number');
 
@@ -610,25 +598,30 @@ class Session {
 
         const authDir = this.getAuthDir();
         removeDirSafe(authDir);
-        this.closeCurrentSocketOnly();
+        ensureDir(authDir);
+
+        try {
+            if (this.socket?.ev?.removeAllListeners) this.socket.ev.removeAllListeners();
+            if (this.socket?.ws?.close) this.socket.ws.close();
+        } catch {}
+        this.socket = null;
 
         this.pairingBusy = true;
         this.otpPrinted = true;
-        this.armPairingWatchdog();
 
         try {
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
-            const version = await resolveBaileysVersionSafe();
+            const version = await getFastVersion();
 
             const sock = makeWASocket({
                 auth: state,
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: true,
+                markOnlineOnConnect: false,
                 syncFullHistory: false,
                 msgRetryCounterCache: new Map(),
                 getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
@@ -640,7 +633,6 @@ class Session {
             sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped || this.socket !== sock) return;
                 if (connection === "open") {
-                    if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
                     this.online = true;
                     this.pairingBusy = false;
                     if (sock.user?.id) {
@@ -649,7 +641,7 @@ class Session {
                     if (sock.user?.lid) {
                         this.selfLid = sock.user.lid.split(':')[0] + '@lid';
                     }
-                    console.log(`[ONLINE] +${this.phone} linked & ready`);
+                    console.log(`[ONLINE] +${this.phone} linked fast`);
                     if (this.requesterJid) {
                         await this.sendInstant(
                             this.requesterJid,
@@ -668,13 +660,15 @@ class Session {
                         removeDirSafe(authDir);
                         return;
                     }
-                    if (!this.pairingBusy && !this.reconnectTimer) {
+                    // After code is sent, let reconnect settle without wiping pairing session
+                    if (!this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped && !this.pairingBusy) {
+                            if (!this.stopped) {
+                                this.pairingBusy = false;
                                 this.init();
                             }
-                        }, 3000);
+                        }, 1800);
                     }
                 }
             });
@@ -686,7 +680,6 @@ class Session {
             return formattedCode;
         } catch (err) {
             this.pairingBusy = false;
-            if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
             throw err;
         }
     }
@@ -734,7 +727,11 @@ class Session {
                 this.reconnectTimer = null;
             }
 
-            this.closeCurrentSocketOnly();
+            try {
+                if (this.socket?.ev?.removeAllListeners) this.socket.ev.removeAllListeners();
+                if (this.socket?.ws?.close) this.socket.ws.close();
+            } catch {}
+            this.socket = null;
 
             const authDir = this.getAuthDir();
             if (this.freshAuth) {
@@ -744,7 +741,7 @@ class Session {
             ensureDir(authDir);
 
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
-            const version = await resolveBaileysVersionSafe();
+            const version = await getFastVersion();
 
             if (this.stopped || this.pairingBusy) return;
 
@@ -753,10 +750,10 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: true,
+                markOnlineOnConnect: false,
                 syncFullHistory: false,
                 msgRetryCounterCache: new Map(),
                 getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
@@ -773,7 +770,6 @@ class Session {
                 if (this.stopped || this.socket !== sock) return;
 
                 if (connection === "open") {
-                    if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
                     this.online = true;
                     this.pairingBusy = false;
                     if (sock.user?.id) {
@@ -790,11 +786,11 @@ class Session {
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
                     }
-                    if (statusCode !== DisconnectReason.loggedOut && !this.pairingBusy && !this.reconnectTimer) {
+                    if (statusCode !== DisconnectReason.loggedOut && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped && !this.pairingBusy) this.init();
-                        }, 3000);
+                        }, 2000);
                     }
                 }
             });
@@ -1575,16 +1571,16 @@ class Hub {
             const session = new Session(id, num, this, null, false, isPrimary);
             this.sessions.set(id, session);
             await session.init();
-            await delay(1200);
+            await delay(600);
         }
     }
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.3 ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.4 ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Browser Profile   : macOS Desktop (Pairing Ready)
+  Browser Profile   : Ubuntu Chrome (Fast Mode)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
