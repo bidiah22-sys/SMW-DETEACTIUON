@@ -17,9 +17,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
 // =========================================================================
-// PRIMARY BOT / OWNER NUMBER
+// PANEL-DRIVEN CONFIGURATION (NO HARDCODED DEFAULT PHONE NUMBER)
 // =========================================================================
-const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
+const BOT_NUMBER = process.env.BOT_NUMBER || "";
 const PING_MINUTES = 4;
 
 // LOOP & SAFETY TIMINGS (MS)
@@ -1649,6 +1649,7 @@ class Hub {
     constructor() {
         this.sessions = new Map();
         this.counter = 1;
+        this.pairQueue = Promise.resolve();
     }
 
     loadSavedNumbers() {
@@ -1669,25 +1670,30 @@ class Hub {
         const clean = normalizeStrictPhone(phone);
         if (!clean) throw new Error('Invalid phone number');
 
-        recordUserNumber(userId, clean);
+        // Run pairing requests strictly one-by-one to prevent socket/auth collisions
+        const runTask = async () => {
+            recordUserNumber(userId, clean);
 
-        const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
-        if (!isTargetPrimary) {
+            const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
             const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
             for (const [key, oldSess] of existingEntries) {
                 await oldSess.destroySession(false);
                 this.sessions.delete(key);
             }
-        }
 
-        const id = String(this.counter++);
-        const session = new Session(id, clean, this, requesterJid, true, false, isTargetPrimary);
-        this.sessions.set(id, session);
+            const id = String(this.counter++);
+            const session = new Session(id, clean, this, requesterJid, true, false, isTargetPrimary);
+            this.sessions.set(id, session);
 
-        const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
-        this.saveNumbers(allNums);
+            const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
+            this.saveNumbers(allNums);
 
-        return await session.pairFreshInChat();
+            return await session.pairFreshInChat();
+        };
+
+        const queuedPromise = this.pairQueue.then(runTask, runTask);
+        this.pairQueue = queuedPromise.catch(() => {});
+        return await queuedPromise;
     }
 
     pauseAllBotsKeepSessionAlive() {
@@ -1733,7 +1739,7 @@ console.log(`
 ◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.8 ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Edition           : Universal Smart Pairing
-  Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
+  Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'PANEL / DYNAMIC ONLY'}
   Browser Profile   : Ubuntu Chrome (Strict Board)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
