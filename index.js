@@ -59,13 +59,15 @@ function pickRandomReaction() {
     return REACTION_POOL[idx];
 }
 
+// Supports Indian (+91 / 91 / 091 / 10-digit) and any international E.164 country code
 function normalizeStrictPhone(rawInput) {
     if (!rawInput) return '';
     let digits = String(rawInput).replace(/\D/g, '');
     if (digits.startsWith('00')) digits = digits.slice(2);
-    digits = digits.replace(/^0+/, '');
     if (digits.length === 10) {
         digits = `91${digits}`;
+    } else if (digits.length > 10 && digits.startsWith('0')) {
+        digits = digits.replace(/^0+/, '');
     }
     if (digits.length < 7 || digits.length > 15) return '';
     return digits;
@@ -293,7 +295,7 @@ const GRAND_START_BANNER = () => boxCard(
         `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
         `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
         `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`,
-        `*${g('PAIRING')}*     : 📜 ${g('LOGS SINGLE CODE MODE')}`
+        `*${g('PAIRING')}*     : 📱 ${g('DIRECT CHAT CODE READY')}`
     ]
 );
 
@@ -330,7 +332,7 @@ const MENU_TEXT = () => boxCard(
         `🤖 ${PREFIX}autoreply on / off ➔ ${g('chat reply & reactions')}`,
         `🎯 ${PREFIX}targetmenu ➔ ${g('name change & text loops')}`,
         `🧠 ${PREFIX}ai [question] ➔ ${g('ai assistant')}`,
-        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}bots ➔ ${g('logs code & list')}`,
+        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}bots ➔ ${g('pair in chat & list')}`,
         `👥 ${PREFIX}grpmenu ➔ ${g('group & gc controls')}`,
         `🎮 ${PREFIX}games ➔ ${g('fun & tools')}`
     ]
@@ -522,15 +524,18 @@ class Session {
         return true;
     }
 
-    async requestSingleCodeFromSocket(sock) {
+    async requestCleanCode(sock) {
         let lastErr = null;
         for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(1500 * attempt);
+                await delay(1600 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
-                const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                if (cleanCode && cleanCode.length >= 6) {
-                    return cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
+                const clean = String(rawCode || '')
+                    .replace(/[^A-Z0-9]/gi, '')
+                    .toUpperCase()
+                    .slice(0, 8);
+                if (clean.length >= 6) {
+                    return clean.match(/.{1,4}/g)?.join('-') || clean;
                 }
                 lastErr = new Error('Empty pairing code');
             } catch (err) {
@@ -549,8 +554,8 @@ class Session {
         console.log(`╚══════════════════════════════════════════════╝\n`);
     }
 
-    // Generates pairing code for added/relinked number and logs it cleanly in Render Logs
-    async pairAndLogCodeNow() {
+    // Generates pairing code for !addbot / !relink without overlapping reconnects
+    async pairFreshInChat() {
         if (!this.phone) throw new Error('Invalid phone number');
 
         const authDir = this.getAuthDir();
@@ -577,7 +582,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -593,23 +598,24 @@ class Session {
                 if (this.stopped) return;
                 if (connection === "open") {
                     this.online = true;
+                    this.pairingBusy = false;
                     if (this.socket?.user?.id) {
                         this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
                     }
                     if (this.socket?.user?.lid) {
                         this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
                     }
-                    console.log(`[ONLINE] +${this.phone} logged in (Standby until !start)`);
+                    console.log(`[ONLINE] +${this.phone} linked & ready`);
                 } else if (connection === "close") {
                     this.online = false;
-                    if (this.stopped) return;
+                    if (this.pairingBusy || this.stopped) return;
                     const code = lastDisconnect?.error?.output?.statusCode;
                     if (code === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
                     } else if (!this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped) this.init();
+                            if (!this.stopped && !this.pairingBusy) this.init();
                         }, 2500);
                     }
                 }
@@ -617,11 +623,12 @@ class Session {
 
             sockSafeBind(this);
 
-            const formattedCode = await this.requestSingleCodeFromSocket(sock);
-            this.printCodeInLogsOnce('ADDBOT CODE', formattedCode);
+            const formattedCode = await this.requestCleanCode(sock);
+            this.printCodeInLogsOnce('ADDED NUMBER CODE', formattedCode);
             return formattedCode;
-        } finally {
+        } catch (err) {
             this.pairingBusy = false;
+            throw err;
         }
     }
 
@@ -632,7 +639,7 @@ class Session {
         this.otpPrinted = true;
         this.pairingBusy = true;
         try {
-            const formattedCode = await this.requestSingleCodeFromSocket(sock);
+            const formattedCode = await this.requestCleanCode(sock);
             this.printCodeInLogsOnce('PRIMARY CODE', formattedCode);
         } catch (err) {
             console.log(`[PRIMARY LOG ERR] +${this.phone}:`, err?.message || err);
@@ -661,7 +668,7 @@ class Session {
 
     async init() {
         try {
-            if (!this.phone) return;
+            if (!this.phone || this.pairingBusy) return;
 
             if (this.socket) {
                 try {
@@ -688,7 +695,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -708,16 +715,17 @@ class Session {
 
                 if (connection === "open") {
                     this.online = true;
+                    this.pairingBusy = false;
                     if (this.socket?.user?.id) {
                         this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
                     }
                     if (this.socket?.user?.lid) {
                         this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
                     }
-                    console.log(`[ONLINE] +${this.phone} logged in (Standby: ${runtimeState.botPaused ? 'PAUSED - send !start' : 'ACTIVE'})`);
+                    console.log(`[ONLINE] +${this.phone} logged in`);
                 } else if (connection === "close") {
                     this.online = false;
-                    if (this.stopped) return;
+                    if (this.pairingBusy || this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
@@ -725,7 +733,7 @@ class Session {
                     if (statusCode !== DisconnectReason.loggedOut && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped) this.init();
+                            if (!this.stopped && !this.pairingBusy) this.init();
                         }, 2500);
                     }
                 }
@@ -766,21 +774,18 @@ class Session {
                 const isOwn = isFromMe || isOwner(sender, this.self, this.selfLid);
                 const allowed = isFromMe || isOwn || isSub(sender, chat);
 
-                // Start command activates the bot only when commanded
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
                     this.hub.resumeAllBots();
                     await this.sendInstant(chat, GRAND_START_BANNER());
                     continue;
                 }
 
-                // Killall stops all loops & auto-reply but keeps session live
                 if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
                     this.hub.pauseAllBotsKeepSessionAlive();
                     await this.sendInstant(chat, KILL_ALL_BANNER());
                     continue;
                 }
 
-                // While paused (standby), ignore all other commands/loops/replies until !start
                 if (runtimeState.botPaused) continue;
 
                 if (AUTO_READ_MESSAGES && !isFromMe) {
@@ -832,13 +837,13 @@ class Session {
                             continue;
                         }
                         try {
-                            const code = await this.hub.addNumberAndPrintInLogs(cleanNum, chat);
+                            const code = await this.hub.addNumberInChat(cleanNum, chat);
                             await this.sendInstant(
                                 chat,
-                                boxCard(`📜 𝗖𝗢𝗗𝗘 𝗦𝗘𝗡𝗧 𝗧𝗢 𝗟𝗢𝗚𝗦 📜`, [
+                                boxCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, [
                                     `*${g('NUMBER')}* : +${cleanNum}`,
                                     `*${g('CODE')}*   : *${code}*`,
-                                    `*${g('STATUS')}* : ${g('PRINTED IN RENDER LOGS')}`
+                                    `*${g('STATUS')}* : ${g('LINK WITHIN 60S')}`
                                 ])
                             );
                         } catch (err) {
@@ -855,13 +860,13 @@ class Session {
                             continue;
                         }
                         try {
-                            const code = await this.hub.addNumberAndPrintInLogs(cleanNum, chat);
+                            const code = await this.hub.addNumberInChat(cleanNum, chat);
                             await this.sendInstant(
                                 chat,
-                                boxCard(`📜 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 𝗜𝗡 𝗟𝗢𝗚𝗦 📜`, [
+                                boxCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, [
                                     `*${g('NUMBER')}* : +${cleanNum}`,
                                     `*${g('CODE')}*   : *${code}*`,
-                                    `*${g('STATUS')}* : ${g('PRINTED IN RENDER LOGS')}`
+                                    `*${g('STATUS')}* : ${g('LINK WITHIN 60S')}`
                                 ])
                             );
                         } catch (err) {
@@ -1241,7 +1246,6 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
-                // Auto-reply + random reaction only when bot is started and chat autoreply is ON
                 if (
                     !runtimeState.botPaused &&
                     isChatAutoReplyOn(this.phone, chat) &&
@@ -1461,7 +1465,7 @@ class Hub {
         writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
     }
 
-    async addNumberAndPrintInLogs(phone, requesterJid = null) {
+    async addNumberInChat(phone, requesterJid = null) {
         const clean = normalizeStrictPhone(phone);
         if (!clean) throw new Error('Invalid phone number');
 
@@ -1478,7 +1482,7 @@ class Hub {
         const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
         this.saveNumbers(allNums);
 
-        return await session.pairAndLogCodeNow();
+        return await session.pairFreshInChat();
     }
 
     pauseAllBotsKeepSessionAlive() {
@@ -1517,7 +1521,7 @@ console.log(`
 ◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Browser Profile   : macOS Desktop (Stable)
+  Browser Profile   : Ubuntu Chrome (Pairing Ready)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
