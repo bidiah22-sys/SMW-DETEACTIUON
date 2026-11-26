@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 — STABLE RENDER + WHATSAPP PAIRING ENGINE    ║
-// ║   Single Primary Owner • Wait Notice • Logs -> WA Code       ║
+// ║      𝗦𝗠𝗪 𝗜𝗢𝗦 — MASTER TRANSFER + FULL AI RENDER ENGINE    ║
+// ║  Primary Master Control • Instant Access Transfer • Live AI  ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -17,33 +17,33 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
 // =========================================================================
-// 1. CONFIGURATION (SINGLE PRIMARY OWNER)
+// 1. CONFIGURATION (SINGLE PRIMARY MASTER)
 // =========================================================================
 const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 const PING_MINUTES = 4;
 
-const MIN_SAFE_DELAY_MS   = 500;
-const DEFAULT_LOOP_MS     = 1200;
-const ANTI_BAN_JITTER_MS  = 120;
-const PAIR_LOGIN_WATCH_MS = 45000;
-const PAIR_WAIT_SECONDS   = 8;
+const MIN_SAFE_DELAY_MS    = 350;
+const DEFAULT_LOOP_MS      = 900;
+const ANTI_BAN_JITTER_MS   = 90;
+const PAIR_LOGIN_WATCH_MS  = 45000;
+const PAIR_WAIT_SECONDS    = 8;
 
 const AUTO_READ_MESSAGES     = true;
-const AUTO_REPLY_COOLDOWN_MS = 600;
+const AUTO_REPLY_COOLDOWN_MS = 350;
 const MAX_WARNS_BEFORE_KICK  = 3;
-const MAX_RECONNECT_ATTEMPTS = 8;
+const MAX_RECONNECT_ATTEMPTS = 10;
 
 const PATH_AUTH      = (phone) => `./sessions/smw_session_${phone}`;
-const PATH_USERS     = './store/users.json';
 const PATH_TIMING    = './store/timing.json';
 const PATH_PREFIX    = './store/prefix.json';
 const PATH_BOTS      = './store/bots.json';
 const PATH_STATE     = './store/state.json';
 const PATH_GC        = './store/gc_settings.json';
+const PATH_ACCESS    = './store/access.json';
 // =========================================================================
 
 // =========================================================================
-// 2. STORAGE & STRICT SINGLE-OWNER CHECK
+// 2. STORAGE, SINGLE MASTER & TRANSFERABLE ACCESS CONTROL
 // =========================================================================
 try {
     fs.mkdirSync('./store', { recursive: true });
@@ -102,10 +102,12 @@ let timingMap  = readJson(PATH_TIMING, {
 let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
 let PREFIX     = prefixData.prefix || '!';
 let gcSettings = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
+let accessData = readJson(PATH_ACCESS, { allowedUsers: [] });
 
 if (!gcSettings.antiLink) gcSettings.antiLink = {};
 if (!gcSettings.welcome) gcSettings.welcome = {};
 if (!gcSettings.warns) gcSettings.warns = {};
+if (!Array.isArray(accessData.allowedUsers)) accessData.allowedUsers = [];
 
 let GLOBAL_EPOCH = 1;
 let cachedBaileysVersion = null;
@@ -121,7 +123,8 @@ if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'obje
 }
 
 const saveRuntimeState = () => writeJson(PATH_STATE, runtimeState);
-const saveGcSettings = () => writeJson(PATH_GC, gcSettings);
+const saveGcSettings   = () => writeJson(PATH_GC, gcSettings);
+const saveAccessData   = () => writeJson(PATH_ACCESS, accessData);
 
 function getSafeDelay(inputMs) {
     const parsed = Number(inputMs);
@@ -158,10 +161,45 @@ const isSingleOwner = (senderJid, sessionSelf = null, sessionLid = null, isFromM
     if (PRIMARY_OWNER_NUM && lidNum && senderNum === lidNum && selfNum === PRIMARY_OWNER_NUM) return true;
     return false;
 };
+
+function isAllowedTransferUser(senderJid) {
+    if (runtimeState.botPaused) return false;
+    const senderNum = extractNumFromJid(senderJid);
+    if (!senderNum) return false;
+    return accessData.allowedUsers.some(u => extractNumFromJid(u) === senderNum);
+}
+
+function canExecuteBotCommand(senderJid, sessionSelf = null, sessionLid = null, isFromMe = false) {
+    if (isSingleOwner(senderJid, sessionSelf, sessionLid, isFromMe)) return true;
+    return isAllowedTransferUser(senderJid);
+}
+
+function grantFullAccess(targetNum) {
+    const clean = normalizeStrictPhone(targetNum);
+    if (!clean) return '';
+    const jid = `${clean}@s.whatsapp.net`;
+    if (!accessData.allowedUsers.some(u => extractNumFromJid(u) === clean)) {
+        accessData.allowedUsers.push(jid);
+        saveAccessData();
+    }
+    return clean;
+}
+
+function revokeFullAccess(targetNum) {
+    const clean = normalizeStrictPhone(targetNum);
+    if (!clean) return false;
+    const before = accessData.allowedUsers.length;
+    accessData.allowedUsers = accessData.allowedUsers.filter(u => extractNumFromJid(u) !== clean);
+    if (accessData.allowedUsers.length !== before) {
+        saveAccessData();
+        return true;
+    }
+    return false;
+}
 // =========================================================================
 
 // =========================================================================
-// 3. EMOJIS, STYLING & GEMINI AI
+// 3. EMOJIS, STYLING & FULL GEMINI AI ENGINE
 // =========================================================================
 const RAW_EMOJI_STRING = "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃❤️🔥⚡👑💀🎯💣🌀🎭🪬🧿💎🗡️🐉☠️";
 const REACTION_POOL = Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(RAW_EMOJI_STRING))
@@ -233,25 +271,37 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
     ]);
 };
 
+const ACCESS_GRANTED_CARD = (targetNum) => boxCard(`⚡ 𝗔𝗖𝗖𝗘𝗦𝗦 𝗧𝗥𝗔𝗡𝗦𝗙𝗘𝗥𝗥𝗘𝗗 ⚡`, [
+    `*${g('TARGET')}* : +${targetNum}`,
+    `*${g('ACCESS')}* : 🔥 ${g('FULL BOT FEATURES UNLOCKED')}`,
+    `*${g('LINKED')}* : 🔗 ${g('ACTIVE WHILE MASTER IS LIVE')}`,
+    `*${g('REVOKE')}* : 🛑 ${PREFIX}revoke +${targetNum}`
+]);
+
+const ACCESS_REVOKED_CARD = (targetNum, removed) => boxCard(`🛑 𝗔𝗖𝗖𝗘𝗦𝗦 𝗥𝗘𝗩𝗢𝗞𝗘𝗗 🛑`, [
+    `*${g('TARGET')}* : +${targetNum}`,
+    `*${g('STATUS')}* : ${removed ? `🔴 ${g('ALL FEATURES STOPPED')}` : `⚠️ ${g('USER NOT FOUND')}`}`
+]);
+
 const GRAND_START_BANNER = () => boxCard(`⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`, [
     `*${g('STATUS')}*      : 🟢 ${g('LIVE & FULL POWER')}`,
-    `*${g('OWNER')}*       : 👑 ${g('SINGLE PRIMARY OWNER')}`,
-    `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
-    `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`
+    `*${g('MASTER')}*      : 👑 ${g('PRIMARY NUMBER ACTIVE')}`,
+    `*${g('SHARED')}*      : 🔥 ${g('TRANSFERRED USERS LIVE')}`,
+    `*${g('AI CORE')}*     : 🧠 ${g('GEMINI CHAT & REACTION LIVE')}`
 ]);
 
 const KILL_ALL_BANNER = () => boxCard(`🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗞𝗜𝗟𝗟𝗘𝗗 🛑`, [
-    `*${g('LOOPS & REPLY')}* : ⏸️ ${g('STOPPED')}`,
-    `*${g('SESSION')}*       : 🔗 ${g('STILL LIVE & SAFE')}`,
+    `*${g('LOOPS & REPLY')}* : ⏸️ ${g('STOPPED FOR ALL')}`,
+    `*${g('SHARED USERS')}*  : 🔴 ${g('PAUSED WITH MASTER')}`,
     `*${g('START AGAIN')}*   : ▶️ ${g('USE')} ${PREFIX}start`
 ]);
 
 const AUTO_REPLY_BANNER = (enabled) => boxCard(
-    enabled ? `🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗡 🤖` : `⛔ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗙𝗙 ⛔`,
+    enabled ? `🤖 𝗙𝗨𝗟𝗟 𝗔𝗜 𝗥𝗘𝗣𝗟𝗬 𝗢𝗡 🤖` : `⛔ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗙𝗙 ⛔`,
     [
-        `*${g('THIS CHAT')}* : ${enabled ? `🟢 ${g('ACTIVE')}` : `🔴 ${g('DISABLED')}`}`,
-        `*${g('REACTIONS')}* : ⚡ ${g('RANDOM EMOJI POOL')}`,
-        `*${g('AI ENGINE')}* : 🧠 ${g('GEMINI CHAT REPLY')}`
+        `*${g('THIS CHAT')}* : ${enabled ? `🟢 ${g('NATURAL AI ACTIVE')}` : `🔴 ${g('DISABLED')}`}`,
+        `*${g('REACTIONS')}* : ⚡ ${g('RANDOM EMOJI ON EVERY MSG')}`,
+        `*${g('AI ENGINE')}* : 🧠 ${g('GEMINI HUMAN-LIKE CHAT')}`
     ]
 );
 
@@ -262,11 +312,11 @@ const BOTS_LIST_BANNER = (list) => boxCard(
 
 const MENU_TEXT = () => boxCard(`🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 🚩`, [
     `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
-    `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
-    `⚡ ${PREFIX}ping / 📊 ${PREFIX}status ➔ ${g('live telemetry')}`,
-    `🤖 ${PREFIX}autoreply on / off / status ➔ ${g('chat reply')}`,
-    `🎯 ${PREFIX}targetmenu ➔ ${g('name change & text loops')}`,
-    `🧠 ${PREFIX}ai [question] ➔ ${g('gemini ai')}`,
+    `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('master control')}`,
+    `⚡ ${PREFIX}allow +num / ${PREFIX}revoke +num / ${PREFIX}accesslist`,
+    `🤖 ${PREFIX}autoreply on / off / status ➔ ${g('full ai chat + react')}`,
+    `🎯 ${PREFIX}targetmenu ➔ ${g('anc1-7 & txt loops')}`,
+    `🧠 ${PREFIX}ai [question] ➔ ${g('direct gemini ai')}`,
     `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}unpair / ${PREFIX}bots`,
     `👥 ${PREFIX}grpmenu / 🎮 ${PREFIX}games ➔ ${g('tools')}`
 ]);
@@ -312,7 +362,7 @@ function withTimeout(promise, ms = 9000) {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function callGeminiWithFallback(promptText, temperature = 0.92) {
+async function callGeminiWithFallback(promptText, temperature = 0.95) {
     for (const modelName of GEMINI_MODELS) {
         try {
             const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { temperature } });
@@ -320,7 +370,7 @@ async function callGeminiWithFallback(promptText, temperature = 0.92) {
             const text = res?.response?.text()?.trim();
             if (text && !recentRepliesSet.has(text)) {
                 recentRepliesSet.add(text);
-                if (recentRepliesSet.size > 80) {
+                if (recentRepliesSet.size > 100) {
                     const first = recentRepliesSet.values().next().value;
                     recentRepliesSet.delete(first);
                 }
@@ -332,34 +382,46 @@ async function callGeminiWithFallback(promptText, temperature = 0.92) {
     return null;
 }
 
-function buildDynamicFallbackReply(userText) {
+function buildNaturalFallbackReply(userText) {
     const clean = String(userText || '').trim().toLowerCase();
     const hasHindi = /[\u0900-\u097F]/.test(userText || '');
     if (/^(hi+|hello+|hey+|yo+|sup)\b/i.test(clean)) {
-        return hasHindi ? "हाँ भाई, बोलो क्या चल रहा है?" : "Haan bhai, bolo kya chal raha hai?";
+        return hasHindi
+            ? "हाँ भाई, मैं ठीक हूँ! आप बताओ कैसे हो?"
+            : "Haan bhai, main bilkul badhiya hoon! Tum batao kaise ho?";
     }
-    if (/(kya haal|kaise ho|kaisa hai|kya kar rahe|kya kr rhe)/i.test(clean)) {
-        return hasHindi ? "सब बढ़िया है भाई, तुम बताओ कैसे हो?" : "Sab badhiya hai bhai, tum batao kaise ho?";
+    if (/(kaise ho|kaisa hai|kya haal|how are you)/i.test(clean)) {
+        return hasHindi
+            ? "मैं बिल्कुल ठीक हूँ भाई, आप सुनाओ कैसे हो?"
+            : "Main ekdum mast hoon bhai, tum batao kaise ho?";
     }
-    return hasHindi ? "हाँ भाई, समझ गया — आगे क्या करना है बताओ?" : "Haan bhai, samajh gaya — aage kya karna hai batao?";
+    if (/(kya kar rahe|kya kr rhe|what are you doing)/i.test(clean)) {
+        return hasHindi
+            ? "बस चैट पर लगा हूँ भाई, बताओ क्या बात करनी है?"
+            : "Bas chat pe active hoon bhai, bolo kya scene hai?";
+    }
+    return hasHindi
+        ? "हाँ भाई, समझ गया — बताओ आगे क्या चल रहा है?"
+        : "Haan bhai, samajh gaya — bolo aage kya chal raha hai?";
 }
 
-async function generateMatchingLanguageReply(userText) {
+async function generateFullAIConversationReply(userText) {
     const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const prompt =
-        `Talk like a normal, natural human friend on WhatsApp. ` +
-        `Reply directly to what the user said in the exact same language and style (Hindi, Hinglish, or English). ` +
-        `Keep it short (1-2 lines), casual, and natural. [ctx:${uniqueTag}]\n\nUser: ${userText}`;
-    const reply = await callGeminiWithFallback(prompt, 0.95);
-    return (reply || buildDynamicFallbackReply(userText)).slice(0, 500);
+        `You are a smart, natural, friendly human chatting on WhatsApp. ` +
+        `Respond directly to what the user said in the exact same language and vibe (Hindi, Hinglish, or English). ` +
+        `If someone greets or asks "hi kaise ho" / "how are you", reply warmly and naturally like "Haan main bilkul badhiya hoon, aap batao kaise ho?" (or natural Hindi/English matching them). ` +
+        `Keep it conversational, sharp, and natural (1-2 lines). Do not sound robotic. [ctx:${uniqueTag}]\n\nUser: ${userText}`;
+    const reply = await callGeminiWithFallback(prompt, 0.96);
+    return (reply || buildNaturalFallbackReply(userText)).slice(0, 600);
 }
 
 async function generateDirectAI(userPrompt) {
     const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const prompt =
-        `Answer the user's question directly, clearly, and naturally in the same language as the question. [ctx:${uniqueTag}]\n\nQuestion: ${userPrompt}`;
-    const reply = await callGeminiWithFallback(prompt, 0.88);
-    return (reply || buildDynamicFallbackReply(userPrompt)).slice(0, 1600);
+        `Answer the user's message directly, smartly, and naturally in the same language and tone as the user. [ctx:${uniqueTag}]\n\nMessage: ${userPrompt}`;
+    const reply = await callGeminiWithFallback(prompt, 0.9);
+    return (reply || buildNaturalFallbackReply(userPrompt)).slice(0, 1600);
 }
 // =========================================================================
 
@@ -530,7 +592,7 @@ class Session {
             return;
         }
         this.reconnectAttempts += 1;
-        const backoffMs = customDelayMs ?? Math.min(12000, 1500 * Math.pow(1.4, this.reconnectAttempts - 1));
+        const backoffMs = customDelayMs ?? Math.min(12000, 1200 * Math.pow(1.35, this.reconnectAttempts - 1));
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             if (!this.stopped) {
@@ -650,7 +712,7 @@ class Session {
                     console.log(`[UNPAIRED SESSION IDLE] +${this.phone} waiting for manual relink or !addbot`);
                     return;
                 }
-                this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired' : 'close', 1200);
+                this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired' : 'close', 1000);
             }
         });
 
@@ -771,19 +833,55 @@ class Session {
                 const cmd = body.toLowerCase().trim();
 
                 const isFromMe = Boolean(raw.key.fromMe);
-                const allowed = isSingleOwner(sender, this.self, this.selfLid, isFromMe);
+                const isMaster = isSingleOwner(sender, this.self, this.selfLid, isFromMe);
+                const allowed = canExecuteBotCommand(sender, this.self, this.selfLid, isFromMe);
 
-                if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
-                    console.log(`[RENDER CMD] ${cmd} from owner ${sender} in ${chat}`);
+                if (isMaster && (cmd === `${PREFIX}start` || cmd === '+start')) {
+                    console.log(`[RENDER CMD] ${cmd} from master ${sender} in ${chat}`);
                     this.hub.resumeAllBots();
                     await this.sendInstant(chat, GRAND_START_BANNER());
                     continue;
                 }
 
-                if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
-                    console.log(`[RENDER CMD] ${cmd} from owner ${sender} in ${chat}`);
+                if (isMaster && (cmd === `${PREFIX}killall` || cmd === '-all')) {
+                    console.log(`[RENDER CMD] ${cmd} from master ${sender} in ${chat}`);
                     this.hub.pauseAllBotsKeepSessionAlive();
                     await this.sendInstant(chat, KILL_ALL_BANNER());
+                    continue;
+                }
+
+                if (isMaster && (cmd === `${PREFIX}allow` || cmd.startsWith(`${PREFIX}allow `))) {
+                    const argPart = body.slice(PREFIX.length + 5).trim();
+                    const targets = getTargetUsers(raw, content, argPart);
+                    const rawTarget = targets[0] ? extractNumFromJid(targets[0]) : argPart;
+                    const grantedNum = grantFullAccess(rawTarget);
+                    if (!grantedNum) {
+                        await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}allow +919876543210`]));
+                        continue;
+                    }
+                    await this.sendInstant(chat, ACCESS_GRANTED_CARD(grantedNum));
+                    continue;
+                }
+
+                if (isMaster && (cmd === `${PREFIX}revoke` || cmd.startsWith(`${PREFIX}revoke `))) {
+                    const argPart = body.slice(PREFIX.length + 6).trim();
+                    const targets = getTargetUsers(raw, content, argPart);
+                    const rawTarget = targets[0] ? extractNumFromJid(targets[0]) : argPart;
+                    const cleanTarget = normalizeStrictPhone(rawTarget);
+                    if (!cleanTarget) {
+                        await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}revoke +919876543210`]));
+                        continue;
+                    }
+                    const removed = revokeFullAccess(cleanTarget);
+                    await this.sendInstant(chat, ACCESS_REVOKED_CARD(cleanTarget, removed));
+                    continue;
+                }
+
+                if (isMaster && (cmd === `${PREFIX}accesslist` || cmd === `${PREFIX}sharedlist`)) {
+                    const nums = accessData.allowedUsers.map(u => `+${extractNumFromJid(u)}`).filter(x => x !== '+');
+                    await this.sendInstant(chat, boxCard(`🔑 𝗦𝗛𝗔𝗥𝗘𝗗 𝗔𝗖𝗖𝗘𝗦𝗦 (${nums.length}) 🔑`,
+                        nums.length ? nums.map((n, i) => `*${i + 1}.* ${n} ➔ 🟢 ${g('FULL ACCESS')}`) : [`*${g('LIST')}* : ${g('NO SHARED NUMBERS')}`]
+                    ));
                     continue;
                 }
 
@@ -811,6 +909,7 @@ class Session {
                         const activeCnt = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
                         await this.sendInstant(chat, boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
                             `*${g('ONLINE')}* : ${activeCnt} ${g('SESSIONS')}`,
+                            `*${g('SHARED')}* : ${accessData.allowedUsers.length} ${g('USERS')}`,
                             `*${g('UPTIME')}* : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
                         ]));
                         continue;
@@ -847,7 +946,7 @@ class Session {
                         continue;
                     }
 
-                    if (cmd.startsWith(`${PREFIX}unpair `)) {
+                    if (isMaster && cmd.startsWith(`${PREFIX}unpair `)) {
                         const cleanNum = normalizeStrictPhone(body.slice(PREFIX.length + 7).trim());
                         if (!cleanNum) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}unpair +9647882064284`]));
@@ -861,7 +960,7 @@ class Session {
                         continue;
                     }
 
-                    if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ') || cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink ')) {
+                    if (isMaster && (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ') || cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink '))) {
                         const rawNum = body.replace(new RegExp(`^(\\${PREFIX}(addbot|relink)|\\+(pair|relink))\\s+`, 'i'), '').trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
                         console.log(`[RENDER ADDBOT CMD] raw="${rawNum}" clean="${cleanNum || 'INVALID'}" chat=${chat}`);
@@ -1024,7 +1123,7 @@ class Session {
                                 if (runtimeState.botPaused || this.stopped) break;
                                 const slice = members.slice(i, i + 20);
                                 await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${note}`, slice.map(j => `@${j.split('@')[0]}`).join(' ')]), slice);
-                                if (i + 20 < members.length) await delay(800);
+                                if (i + 20 < members.length) await delay(650);
                             }
                         } catch {}
                         continue;
@@ -1060,7 +1159,7 @@ class Session {
                         if (!prompt) continue;
                         const reqEpoch = GLOBAL_EPOCH;
                         const reply = await generateDirectAI(prompt);
-                        if (!runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH) {
+                        if (!runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH && canExecuteBotCommand(sender, this.self, this.selfLid, isFromMe)) {
                             await this.sendInstant(chat, boxCard(`🧠 𝗦𝗠𝗪 𝗔𝗜 🧠`, [reply]));
                         }
                         continue;
@@ -1123,7 +1222,7 @@ class Session {
                         this.lastAutoReplyAt.set(replyKey, Date.now());
                         (async () => {
                             try {
-                                const replyText = await generateMatchingLanguageReply(body);
+                                const replyText = await generateFullAIConversationReply(body);
                                 if (replyText && !runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH && isChatAutoReplyOn(this.phone, chat) && !this.stopped) {
                                     await this.sendQuoted(chat, replyText, raw);
                                 }
@@ -1166,8 +1265,8 @@ class Session {
                         let elapsed = 0;
                         while (elapsed < safeDelay) {
                             if (this.stopped || runtimeState.botPaused || startEpoch !== GLOBAL_EPOCH || !stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
-                            await delay(Math.min(120, safeDelay - elapsed));
-                            elapsed += 120;
+                            await delay(Math.min(100, safeDelay - elapsed));
+                            elapsed += 100;
                         }
                     }
                 })();
@@ -1193,8 +1292,8 @@ class Session {
                         let elapsed = 0;
                         while (elapsed < safeDelay) {
                             if (this.stopped || runtimeState.botPaused || startEpoch !== GLOBAL_EPOCH || !loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
-                            await delay(Math.min(120, safeDelay - elapsed));
-                            elapsed += 120;
+                            await delay(Math.min(100, safeDelay - elapsed));
+                            elapsed += 100;
                         }
                     }
                 })();
@@ -1206,7 +1305,7 @@ class Session {
     enqueueSend(taskFn) {
         this.sendQueue = this.sendQueue.then(async () => {
             await taskFn();
-            await delay(80 + Math.floor(Math.random() * 60));
+            await delay(60 + Math.floor(Math.random() * 50));
         }).catch(() => {});
         return this.sendQueue;
     }
@@ -1365,13 +1464,13 @@ function startKeepAlive() {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — STABLE RENDER ENGINE ⚡
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Primary Owner     : ${PRIMARY_OWNER_NUM ? `+${PRIMARY_OWNER_NUM}` : 'NOT SET'}
-  Pairing Flow      : Wait Notice -> Render Logs -> WA Chat
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — MASTER TRANSFER + FULL AI ENGINE ⚡
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Primary Master    : ${PRIMARY_OWNER_NUM ? `+${PRIMARY_OWNER_NUM}` : 'NOT SET'}
+  Shared Users      : ${accessData.allowedUsers.length} ACTIVE
   Initial State     : STANDBY (Send !start)
   Port              : ${PORT}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
 process.on('uncaughtException', err => console.log('[SAFE UNCAUGHT]', err?.message || err));
