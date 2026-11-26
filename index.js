@@ -713,7 +713,7 @@ class Session {
             if (names) {
                 await this.sendInstant(
                     groupJid,
-                    boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS') Cores}* : ${names}`]),
+                    boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS')}* : ${names}`]),
                     mentions
                 );
             }
