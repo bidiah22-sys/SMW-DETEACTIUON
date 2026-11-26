@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║         𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER PAIRING & BOT ENGINE (V2)          ║
-// ║   WhatsApp !addbot -> Render Socket -> Render Log OTP -> WA  ║
+// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER LOGS TO WHATSAPP PAIRING ENGINE     ║
+// ║      Prints Real Pairing Code in Render Logs -> Sends to WA  ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -226,10 +226,10 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
     const rawCode = String(formattedCode || '').replace(/[^A-Z0-9]/gi, '');
     return boxCard(title, [
         `*${g('NUMBER')}* : +${cleanNum}`,
-        `*${g('OTP CODE')}* : \`${formattedCode}\``,
-        `*${g('PLAIN')}*    : \`${rawCode}\``,
-        `*${g('STEPS')}*    : ${g('WHATSAPP > LINKED DEVICES')}`,
-        `*${g('RENDER')}*   : ${g('PRINTED IN LOGS')}`
+        `*${g('CODE')}*   : \`${formattedCode}\``,
+        `*${g('PLAIN')}*  : \`${rawCode}\``,
+        `*${g('STEPS')}*  : ${g('WHATSAPP > LINKED DEVICES')}`,
+        `*${g('LOGS')}*   : ${g('PRINTED IN RENDER LOGS')}`
     ]);
 };
 
@@ -542,29 +542,30 @@ class Session {
 
     async requestRealSocketCode(sock) {
         let lastErr = null;
-        for (let attempt = 1; attempt <= 5; attempt++) {
+        for (let attempt = 1; attempt <= 6; attempt++) {
             try {
-                await delay(800 * attempt);
+                await delay(1000 * attempt);
                 if (this.stopped || this.socket !== sock) {
                     throw new Error('Socket replaced or stopped during pairing');
                 }
                 if (!sock || typeof sock.requestPairingCode !== 'function') {
                     throw new Error('requestPairingCode not available on socket');
                 }
+                console.log(`[RENDER LOG REQUEST] +${this.phone} — attempt ${attempt} calling requestPairingCode...`);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 8);
                 if (clean.length >= 6) {
                     const formatted = clean.match(/.{1,4}/g)?.join('-') || clean;
                     this.lastRealCode = formatted;
-                    console.log(`\n╔══════════════════════════════════════════════╗`);
-                    console.log(`║ [RENDER OTP] +${this.phone} => ${formatted}`);
-                    console.log(`╚══════════════════════════════════════════════╝\n`);
+                    console.log(`\n╔════════════════════════════════════════════════╗`);
+                    console.log(`║ [RENDER LOG PAIRING CODE] +${this.phone} => ${formatted}`);
+                    console.log(`╚════════════════════════════════════════════════╝\n`);
                     return formatted;
                 }
                 lastErr = new Error('Socket returned empty/short code');
             } catch (err) {
                 lastErr = err;
-                console.log(`[RENDER OTP ATTEMPT ${attempt} FAILED] +${this.phone}:`, err?.message || err);
+                console.log(`[RENDER LOG CODE ERR ${attempt}] +${this.phone}:`, err?.message || err);
             }
         }
         throw lastErr || new Error('Failed to fetch real pairing code from WhatsApp socket');
@@ -658,7 +659,7 @@ class Session {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
 
-        console.log(`[RENDER PAIR START] +${this.phone} — creating fresh auth & socket...`);
+        console.log(`[RENDER PAIR START] +${this.phone} — preparing socket to print code in Render logs...`);
 
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
         if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
@@ -695,7 +696,7 @@ class Session {
 
         this.otpPrinted = true;
         this.pairingBusy = true;
-        console.log(`[RENDER PRIMARY PAIR] +${this.phone} — requesting OTP in Render logs...`);
+        console.log(`[RENDER PRIMARY PAIR] +${this.phone} — printing code in Render logs...`);
         try {
             await this.requestRealSocketCode(sock);
         } catch (err) {
@@ -877,7 +878,7 @@ class Session {
                         console.log(`[RENDER CMD] +${cleanNum} requested from ${chat}`);
                         try {
                             const realCode = await this.hub.addNumberInChat(cleanNum, chat);
-                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗢𝗧𝗣 🔑`, cleanNum, realCode));
+                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, realCode));
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [
                                 `*${g('NUMBER')}* : +${cleanNum}`,
@@ -1276,7 +1277,7 @@ class Hub {
         if (!clean) throw new Error('Invalid phone number');
 
         const runTask = async () => {
-            console.log(`[RENDER QUEUE] Adding & pairing +${clean}...`);
+            console.log(`[RENDER QUEUE] Pairing +${clean} -> printing code in Render logs first...`);
             const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
             const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
             for (const [key, oldSess] of existingEntries) {
@@ -1368,11 +1369,10 @@ function startKeepAlive() {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER + WHATSAPP ENGINE ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER LOGS PAIRING ENGINE ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Bot       : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Gemini AI         : ENABLED (${GEMINI_MODELS.join(', ')})
-  Pairing Flow      : Render Log OTP -> WhatsApp Chat
+  Pairing Output    : Render Logs -> WhatsApp Chat
   Initial State     : STANDBY (Send !start)
   Port              : ${PORT}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
