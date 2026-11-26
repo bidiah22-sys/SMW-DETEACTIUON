@@ -1,8 +1,8 @@
 {
   "name": "smw-ios-whatsapp-manager",
-  "version": "15.0.0",
+  "version": "16.0.0",
   "type": "module",
-  "description": "SMW IOS Multi-Bot WhatsApp Manager for Render / GitHub",
+  "description": "SMW IOS Multi-Bot WhatsApp Manager (Instant Commands & Single Pairing Code)",
   "main": "index.js",
   "engines": {
     "node": ">=18"
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
-    "@whiskeysockets/baileys": "^6.7.16",
+    "@whiskeysockets/baileys": "^6.7.20",
     "express": "^4.21.2",
     "pino": "^9.6.0"
   }
