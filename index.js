@@ -1,6 +1,5 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║   𝗦𝗠𝗪 𝗜𝗢𝗦 — LID + PHONE UNIVERSAL COMMAND & TRANSFER ENGINE  ║
-// ║  Works in Every DM & Group • Real Access Transfer • Full AI  ║
+// ║      𝗦𝗠𝗪 𝗜𝗢𝗦 — DIRECT SET ACCESS + FULL AI RENDER ENGINE   ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -17,7 +16,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
 // =========================================================================
-// 1. CONFIGURATION (SINGLE PRIMARY MASTER)
+// 1. CONFIGURATION
 // =========================================================================
 const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 const PING_MINUTES = 4;
@@ -33,18 +32,14 @@ const AUTO_REPLY_COOLDOWN_MS = 350;
 const MAX_WARNS_BEFORE_KICK  = 3;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
-const PATH_AUTH      = (phone) => `./sessions/smw_session_${phone}`;
-const PATH_TIMING    = './store/timing.json';
-const PATH_PREFIX    = './store/prefix.json';
-const PATH_BOTS      = './store/bots.json';
-const PATH_STATE     = './store/state.json';
-const PATH_GC        = './store/gc_settings.json';
-const PATH_ACCESS    = './store/access.json';
-const PATH_ID_MAP    = './store/id_map.json';
+const PATH_AUTH   = (phone) => `./sessions/smw_session_${phone}`;
+const PATH_TIMING = './store/timing.json';
+const PATH_BOTS   = './store/bots.json';
+const PATH_GC     = './store/gc_settings.json';
 // =========================================================================
 
 // =========================================================================
-// 2. STORAGE, LID/PHONE RESOLVER & REAL ACCESS TRANSFER
+// 2. DIRECT IN-MEMORY ACCESS SET & HELPERS
 // =========================================================================
 try {
     fs.mkdirSync('./store', { recursive: true });
@@ -78,59 +73,34 @@ function removeDirSafe(dirPath) {
     } catch {}
 }
 
-function normalizeStrictPhone(rawInput) {
-    if (!rawInput) return '';
-    let digits = String(rawInput).trim().replace(/[^\d+]/g, '');
-    if (digits.startsWith('+')) digits = digits.slice(1);
-    digits = digits.replace(/\D/g, '');
-    if (digits.startsWith('00')) digits = digits.slice(2);
-    if (digits.length === 10) {
-        digits = `91${digits}`;
-    } else if (digits.length > 10 && digits.startsWith('0')) {
-        digits = digits.replace(/^0+/, '');
-    }
-    if (!/^[1-9]\d{6,14}$/.test(digits)) return '';
-    return digits;
+function cleanDigits(input = '') {
+    let d = String(input).replace(/\D/g, '');
+    if (d.startsWith('00')) d = d.slice(2);
+    if (d.length === 10) d = '91' + d;
+    return d;
 }
 
-const CONFIGURED_BOT_NUMBER = normalizeStrictPhone(BOT_NUMBER);
-const PRIMARY_OWNER_NUM = CONFIGURED_BOT_NUMBER;
+const PREFIX = '!';
+const CONFIGURED_BOT_NUMBER = cleanDigits(BOT_NUMBER);
+const ALLOWED_NUMBERS = new Set();
 
-let timingMap  = readJson(PATH_TIMING, {
-    anc1: DEFAULT_LOOP_MS, anc2: DEFAULT_LOOP_MS, anc3: DEFAULT_LOOP_MS,
-    anc4: DEFAULT_LOOP_MS, anc5: DEFAULT_LOOP_MS, anc6: DEFAULT_LOOP_MS, anc7: DEFAULT_LOOP_MS
-});
-let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
-let PREFIX     = prefixData.prefix || '!';
-let gcSettings = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
-let accessData = readJson(PATH_ACCESS, { allowedNums: [], allowedLids: [] });
-let idMapData  = readJson(PATH_ID_MAP, { phoneToLid: {}, lidToPhone: {} });
-
-if (!gcSettings.antiLink) gcSettings.antiLink = {};
-if (!gcSettings.welcome) gcSettings.welcome = {};
-if (!gcSettings.warns) gcSettings.warns = {};
-if (!Array.isArray(accessData.allowedNums)) accessData.allowedNums = [];
-if (!Array.isArray(accessData.allowedLids)) accessData.allowedLids = [];
-if (!idMapData.phoneToLid) idMapData.phoneToLid = {};
-if (!idMapData.lidToPhone) idMapData.lidToPhone = {};
+let botPaused = true;
+const autoReplyChats = new Set();
 
 let GLOBAL_EPOCH = 1;
 let cachedBaileysVersion = null;
 const BOOT_TS = Date.now();
 
-let runtimeState = readJson(PATH_STATE, {
-    botPaused: true,
-    autoReplyChats: {}
+let timingMap = readJson(PATH_TIMING, {
+    anc1: DEFAULT_LOOP_MS, anc2: DEFAULT_LOOP_MS, anc3: DEFAULT_LOOP_MS,
+    anc4: DEFAULT_LOOP_MS, anc5: DEFAULT_LOOP_MS, anc6: DEFAULT_LOOP_MS, anc7: DEFAULT_LOOP_MS
 });
-runtimeState.botPaused = true;
-if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'object') {
-    runtimeState.autoReplyChats = {};
-}
+let gcSettings = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
+if (!gcSettings.antiLink) gcSettings.antiLink = {};
+if (!gcSettings.welcome) gcSettings.welcome = {};
+if (!gcSettings.warns) gcSettings.warns = {};
 
-const saveRuntimeState = () => writeJson(PATH_STATE, runtimeState);
-const saveGcSettings   = () => writeJson(PATH_GC, gcSettings);
-const saveAccessData   = () => writeJson(PATH_ACCESS, accessData);
-const saveIdMapData    = () => writeJson(PATH_ID_MAP, idMapData);
+const saveGcSettings = () => writeJson(PATH_GC, gcSettings);
 
 function getSafeDelay(inputMs) {
     const parsed = Number(inputMs);
@@ -139,160 +109,26 @@ function getSafeDelay(inputMs) {
     return Math.max(MIN_SAFE_DELAY_MS, parsed) + jitter;
 }
 
-function isChatAutoReplyOn(sessionPhone, chatJid) {
-    if (runtimeState.botPaused) return false;
-    return Boolean(runtimeState.autoReplyChats[`${sessionPhone}::${String(chatJid || '').trim()}`]);
+function getReplyKey(sessionPhone, chatJid) {
+    return `${sessionPhone}::${String(chatJid || '').trim()}`;
 }
 
-function setChatAutoReply(sessionPhone, chatJid, enabled) {
-    const key = `${sessionPhone}::${String(chatJid || '').trim()}`;
-    if (enabled) runtimeState.autoReplyChats[key] = true;
-    else delete runtimeState.autoReplyChats[key];
-    saveRuntimeState();
+function isMasterMsg(raw, sender) {
+    if (Boolean(raw?.key?.fromMe)) return true;
+    const d = cleanDigits(sender);
+    return Boolean(CONFIGURED_BOT_NUMBER && d === CONFIGURED_BOT_NUMBER);
 }
 
-function extractRawId(j) {
-    if (!j) return '';
-    return String(j).split('@')[0].split(':')[0].replace(/\D/g, '');
-}
-
-function extractNumFromJid(j) {
-    if (!j) return '';
-    const str = String(j);
-    const raw = extractRawId(str);
-    if (str.endsWith('@lid') && idMapData.lidToPhone[raw]) {
-        return idMapData.lidToPhone[raw];
-    }
-    return raw;
-}
-
-function linkPhoneAndLid(phoneVal, lidVal) {
-    const p = normalizeStrictPhone(phoneVal);
-    const l = String(lidVal || '').replace(/\D/g, '');
-    if (!p && !l) return;
-    let changed = false;
-    if (p && l) {
-        if (idMapData.phoneToLid[p] !== l) {
-            idMapData.phoneToLid[p] = l;
-            changed = true;
-        }
-        if (idMapData.lidToPhone[l] !== p) {
-            idMapData.lidToPhone[l] = p;
-            changed = true;
-        }
-        if (accessData.allowedNums.includes(p) && !accessData.allowedLids.includes(l)) {
-            accessData.allowedLids.push(l);
-            changed = true;
-        }
-        if (accessData.allowedLids.includes(l) && !accessData.allowedNums.includes(p)) {
-            accessData.allowedNums.push(p);
-            changed = true;
-        }
-    }
-    if (changed) {
-        saveIdMapData();
-        saveAccessData();
-    }
-}
-
-function getAllKnownIdsForSender(senderJid) {
-    const raw = extractRawId(senderJid);
-    const resolvedPhone = extractNumFromJid(senderJid);
-    const ids = new Set();
-    if (raw) ids.add(raw);
-    if (resolvedPhone) ids.add(resolvedPhone);
-    if (resolvedPhone && idMapData.phoneToLid[resolvedPhone]) {
-        ids.add(idMapData.phoneToLid[resolvedPhone]);
-    }
-    if (raw && idMapData.lidToPhone[raw]) {
-        ids.add(idMapData.lidToPhone[raw]);
-    }
-    return ids;
-}
-
-const isSingleOwner = (senderJid, sessionSelf = null, sessionLid = null, isFromMe = false) => {
-    if (isFromMe) return true;
-    const ids = getAllKnownIdsForSender(senderJid);
-    const selfNum = extractRawId(sessionSelf);
-    const lidNum = extractRawId(sessionLid);
-
-    if (PRIMARY_OWNER_NUM && ids.has(PRIMARY_OWNER_NUM)) return true;
-    if (selfNum && ids.has(selfNum)) return true;
-    if (lidNum && ids.has(lidNum)) return true;
-    return false;
-};
-
-function isAllowedTransferUser(senderJid) {
-    if (runtimeState.botPaused) return false;
-    const ids = getAllKnownIdsForSender(senderJid);
-    for (const id of ids) {
-        if (accessData.allowedNums.includes(id) || accessData.allowedLids.includes(id)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function canExecuteBotCommand(senderJid, sessionSelf = null, sessionLid = null, isFromMe = false) {
-    if (isSingleOwner(senderJid, sessionSelf, sessionLid, isFromMe)) return true;
-    return isAllowedTransferUser(senderJid);
-}
-
-function grantFullAccess(rawTarget) {
-    const str = String(rawTarget || '').trim();
-    const rawDigits = extractRawId(str);
-    const phone = normalizeStrictPhone(str);
-
-    if (!phone && !rawDigits) return null;
-
-    const targetId = phone || rawDigits;
-    if (phone && !accessData.allowedNums.includes(phone)) {
-        accessData.allowedNums.push(phone);
-    }
-    if (str.endsWith('@lid') && rawDigits && !accessData.allowedLids.includes(rawDigits)) {
-        accessData.allowedLids.push(rawDigits);
-    }
-    if (phone && idMapData.phoneToLid[phone] && !accessData.allowedLids.includes(idMapData.phoneToLid[phone])) {
-        accessData.allowedLids.push(idMapData.phoneToLid[phone]);
-    }
-    if (rawDigits && idMapData.lidToPhone[rawDigits]) {
-        const linkedPhone = idMapData.lidToPhone[rawDigits];
-        if (!accessData.allowedNums.includes(linkedPhone)) accessData.allowedNums.push(linkedPhone);
-    }
-    saveAccessData();
-    return targetId;
-}
-
-function revokeFullAccess(rawTarget) {
-    const str = String(rawTarget || '').trim();
-    const rawDigits = extractRawId(str);
-    const phone = normalizeStrictPhone(str);
-    if (!phone && !rawDigits) return { id: '', removed: false };
-
-    const idsToRemove = new Set();
-    if (phone) {
-        idsToRemove.add(phone);
-        if (idMapData.phoneToLid[phone]) idsToRemove.add(idMapData.phoneToLid[phone]);
-    }
-    if (rawDigits) {
-        idsToRemove.add(rawDigits);
-        if (idMapData.lidToPhone[rawDigits]) idsToRemove.add(idMapData.lidToPhone[rawDigits]);
-    }
-
-    const beforeNums = accessData.allowedNums.length;
-    const beforeLids = accessData.allowedLids.length;
-
-    accessData.allowedNums = accessData.allowedNums.filter(n => !idsToRemove.has(n));
-    accessData.allowedLids = accessData.allowedLids.filter(l => !idsToRemove.has(l));
-
-    const removed = (accessData.allowedNums.length !== beforeNums) || (accessData.allowedLids.length !== beforeLids);
-    if (removed) saveAccessData();
-    return { id: phone || rawDigits, removed };
+function isAllowedMsg(raw, sender) {
+    if (isMasterMsg(raw, sender)) return true;
+    if (botPaused) return false;
+    const d = cleanDigits(sender);
+    return Boolean(d && ALLOWED_NUMBERS.has(d));
 }
 // =========================================================================
 
 // =========================================================================
-// 3. EMOJIS, STYLING & FULL GEMINI AI ENGINE
+// 3. EMOJIS, CARDS & GEMINI AI
 // =========================================================================
 const RAW_EMOJI_STRING = "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃❤️🔥⚡👑💀🎯💣🌀🎭🪬🧿💎🗡️🐉☠️";
 const REACTION_POOL = Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(RAW_EMOJI_STRING))
@@ -347,105 +183,20 @@ const boxCard = (header, rows) => {
     ].join('\n');
 };
 
-const pairWaitCard = (cleanNum, waitSec) => boxCard(`⏳ 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗜𝗡 𝗣𝗥𝗢𝗚𝗥𝗘𝗦𝗦 ⏳`, [
-    `*${g('NUMBER')}* : +${cleanNum}`,
-    `*${g('WAIT')}*   : ${g('PLEASE WAIT')} ~${waitSec}s`,
-    `*${g('LOGS')}*   : ${g('GENERATING IN RENDER LOGS')}`
-]);
-
-const pairingCodeCard = (title, cleanNum, formattedCode) => {
-    const rawCode = String(formattedCode || '').replace(/[^A-Z0-9]/gi, '');
-    return boxCard(title, [
-        `*${g('NUMBER')}* : +${cleanNum}`,
-        `*${g('CODE')}*   : \`${formattedCode}\``,
-        `*${g('PLAIN')}*  : \`${rawCode}\``,
-        `*${g('STEPS')}*  : ${g('WHATSAPP > LINKED DEVICES')}`,
-        `*${g('SOURCE')}* : ${g('RENDER LOGS & CHAT')}`
-    ]);
-};
-
-const ACCESS_GRANTED_CARD = (targetId) => boxCard(`⚡ 𝗔𝗖𝗖𝗘𝗦𝗦 𝗧𝗥𝗔𝗡𝗦𝗙𝗘𝗥𝗥𝗘𝗗 ⚡`, [
-    `*${g('TARGET')}* : +${targetId}`,
-    `*${g('ACCESS')}* : 🔥 ${g('FULL BOT FEATURES UNLOCKED')}`,
-    `*${g('SCOPE')}*  : 🌐 ${g('ALL DMs & GROUPS ACTIVE')}`,
-    `*${g('REVOKE')}* : 🛑 ${PREFIX}revoke +${targetId}`
-]);
-
-const ACCESS_REVOKED_CARD = (targetId, removed) => boxCard(`🛑 𝗔𝗖𝗖𝗘𝗦𝗦 𝗥𝗘𝗩𝗢𝗞𝗘𝗗 🛑`, [
-    `*${g('TARGET')}* : +${targetId}`,
-    `*${g('STATUS')}* : ${removed ? `🔴 ${g('ALL FEATURES STOPPED')}` : `⚠️ ${g('USER NOT FOUND')}`}`
-]);
-
-const GRAND_START_BANNER = () => boxCard(`⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`, [
-    `*${g('STATUS')}*      : 🟢 ${g('LIVE & FULL POWER')}`,
-    `*${g('MASTER')}*      : 👑 ${g('PRIMARY NUMBER ACTIVE')}`,
-    `*${g('SHARED')}*      : 🔥 ${g('TRANSFERRED USERS LIVE')}`,
-    `*${g('AI CORE')}*     : 🧠 ${g('GEMINI CHAT & REACTION LIVE')}`
-]);
-
-const KILL_ALL_BANNER = () => boxCard(`🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗞𝗜𝗟𝗟𝗘𝗗 🛑`, [
-    `*${g('LOOPS & REPLY')}* : ⏸️ ${g('STOPPED FOR ALL')}`,
-    `*${g('SHARED USERS')}*  : 🔴 ${g('PAUSED WITH MASTER')}`,
-    `*${g('START AGAIN')}*   : ▶️ ${g('USE')} ${PREFIX}start`
-]);
-
-const AUTO_REPLY_BANNER = (enabled) => boxCard(
-    enabled ? `🤖 𝗙𝗨𝗟𝗟 𝗔𝗜 𝗥𝗘𝗣𝗟𝗬 𝗢𝗡 🤖` : `⛔ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗙𝗙 ⛔`,
-    [
-        `*${g('THIS CHAT')}* : ${enabled ? `🟢 ${g('NATURAL AI ACTIVE')}` : `🔴 ${g('DISABLED')}`}`,
-        `*${g('REACTIONS')}* : ⚡ ${g('RANDOM EMOJI ON EVERY MSG')}`,
-        `*${g('AI ENGINE')}* : 🧠 ${g('GEMINI HUMAN-LIKE CHAT')}`
-    ]
-);
-
-const BOTS_LIST_BANNER = (list) => boxCard(
-    `📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 (${list.length}) 📱`,
-    list.map((s, idx) => `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('ONLINE')}` : s.pairingBusy ? `⚡ ${g('PAIRING')}` : `🟡 ${g('STANDBY')}`}`)
-);
-
 const MENU_TEXT = () => boxCard(`🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 🚩`, [
-    `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
-    `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('master control')}`,
+    `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall`,
     `⚡ ${PREFIX}allow +num / ${PREFIX}revoke +num / ${PREFIX}accesslist`,
-    `🤖 ${PREFIX}autoreply on / off / status ➔ ${g('full ai chat + react')}`,
-    `🎯 ${PREFIX}targetmenu ➔ ${g('anc1-7 & txt loops')}`,
-    `🧠 ${PREFIX}ai [question] ➔ ${g('direct gemini ai')}`,
-    `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}unpair / ${PREFIX}bots`,
-    `👥 ${PREFIX}grpmenu / 🎮 ${PREFIX}games ➔ ${g('tools')}`
-]);
-
-const TARGET_MENU = () => boxCard(`🎯 𝗧𝗔𝗥𝗚𝗘𝗧 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 🔥`, [
-    `*${g('NAME LOOPS')}* : ${PREFIX}anc1-7 [text] [ms]`,
-    `*${g('STOP NAME')}*  : ${PREFIX}ancstop`,
-    `*${g('TEXT LOOP')}*  : ${PREFIX}txt [text] [ms]`,
-    `*${g('STOP TEXT')}*  : ${PREFIX}stoptxt`
-]);
-
-const GRP_MENU = () => boxCard(`👥 𝗚𝗥𝗢𝗨𝗣 𝗣𝗢𝗪𝗘𝗥 🛡️`, [
-    `*${g('LOCK / UNLOCK')}* : ${PREFIX}lockgc / ${PREFIX}unlockgc`,
-    `*${g('KICK / ADD')}*    : ${PREFIX}kick @user / ${PREFIX}add [num]`,
-    `*${g('WARNS')}*         : ${PREFIX}warn @user / ${PREFIX}unwarn @user`,
-    `*${g('ROLES')}*         : ${PREFIX}promote / ${PREFIX}demote`,
-    `*${g('GROUP INFO')}*    : ${PREFIX}setname / ${PREFIX}setdesc / ${PREFIX}groupinfo / ${PREFIX}admins`,
-    `*${g('GUARDS')}*        : ${PREFIX}antilink on/off / ${PREFIX}welcome on/off / ${PREFIX}tagall`
-]);
-
-const GAMES_MENU = () => boxCard(`🎮 𝗚𝗔𝗠𝗘𝗦 & 𝗧𝗢𝗢𝗟𝗦 🎲`, [
-    `*${g('COIN')}* : ${PREFIX}flip`,
-    `*${g('DICE')}* : ${PREFIX}roll`,
-    `*${g('RPS')}*  : ${PREFIX}rps [rock/paper/scissors]`
-]);
-
-const loopStartLayout = (title, detail) => boxCard(`🔥 ${title.toUpperCase()} ${g('STARTED')} 🔥`, [
-    `*${g('ENGINE')}* : ⚡ ${g('RUNNING LIVE')}`,
-    `*${g('CONFIG')}* : ${detail}`,
-    `*${g('STOP')}*   : 🛑 ${PREFIX}ancstop / ${PREFIX}stoptxt / ${PREFIX}killall`
+    `🤖 ${PREFIX}autoreply on / off`,
+    `🎯 ${PREFIX}anc1-7 [text] [ms] / ${PREFIX}ancstop`,
+    `💬 ${PREFIX}txt [text] [ms] / ${PREFIX}stoptxt`,
+    `🧠 ${PREFIX}ai [message]`,
+    `📱 ${PREFIX}addbot +num / ${PREFIX}unpair +num / ${PREFIX}bots`,
+    `👥 ${PREFIX}lockgc / ${PREFIX}unlockgc / ${PREFIX}kick / ${PREFIX}tagall`
 ]);
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
-const recentRepliesSet = new Set();
 
 function withTimeout(promise, ms = 9000) {
     let timer;
@@ -455,66 +206,44 @@ function withTimeout(promise, ms = 9000) {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function callGeminiWithFallback(promptText, temperature = 0.95) {
+async function callGemini(promptText, temperature = 0.95) {
     for (const modelName of GEMINI_MODELS) {
         try {
             const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { temperature } });
             const res = await withTimeout(model.generateContent(promptText), 9000);
             const text = res?.response?.text()?.trim();
-            if (text && !recentRepliesSet.has(text)) {
-                recentRepliesSet.add(text);
-                if (recentRepliesSet.size > 100) {
-                    const first = recentRepliesSet.values().next().value;
-                    recentRepliesSet.delete(first);
-                }
-                return text;
-            }
             if (text) return text;
         } catch {}
     }
     return null;
 }
 
-function buildNaturalFallbackReply(userText) {
+function fallbackChatReply(userText) {
     const clean = String(userText || '').trim().toLowerCase();
     const hasHindi = /[\u0900-\u097F]/.test(userText || '');
-    if (/^(hi+|hello+|hey+|yo+|sup)\b/i.test(clean)) {
+    if (/(kaise ho|kaisa hai|how are you|kya haal)/i.test(clean)) {
         return hasHindi
-            ? "हाँ भाई, मैं ठीक हूँ! आप बताओ कैसे हो?"
-            : "Haan bhai, main bilkul badhiya hoon! Tum batao kaise ho?";
-    }
-    if (/(kaise ho|kaisa hai|kya haal|how are you)/i.test(clean)) {
-        return hasHindi
-            ? "मैं बिल्कुल ठीक हूँ भाई, आप सुनाओ कैसे हो?"
-            : "Main ekdum mast hoon bhai, tum batao kaise ho?";
-    }
-    if (/(kya kar rahe|kya kr rhe|what are you doing)/i.test(clean)) {
-        return hasHindi
-            ? "बस चैट पर लगा हूँ भाई, बताओ क्या बात करनी है?"
-            : "Bas chat pe active hoon bhai, bolo kya scene hai?";
+            ? "हाँ मैं बिल्कुल ठीक हूँ, आप बताओ कैसे हो?"
+            : "Haan main bilkul badhiya hoon, aap batao kaise ho?";
     }
     return hasHindi
-        ? "हाँ भाई, समझ गया — बताओ आगे क्या चल रहा है?"
-        : "Haan bhai, samajh gaya — bolo aage kya chal raha hai?";
+        ? "हाँ भाई, बताओ क्या बात करनी है?"
+        : "Haan bhai, bolo kya chal raha hai?";
 }
 
-async function generateFullAIConversationReply(userText) {
-    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+async function generateChatReply(userText) {
     const prompt =
-        `You are a smart, natural, friendly human chatting on WhatsApp. ` +
-        `Respond directly to what the user said in the exact same language and vibe (Hindi, Hinglish, or English). ` +
-        `If someone greets or asks "hi kaise ho" / "how are you", reply warmly and naturally like "Haan main bilkul badhiya hoon, aap batao kaise ho?" (or natural Hindi/English matching them). ` +
-        `Keep it conversational, sharp, and natural (1-2 lines). Do not sound robotic. [ctx:${uniqueTag}]\n\nUser: ${userText}`;
-    const reply = await callGeminiWithFallback(prompt, 0.96);
-    return (reply || buildNaturalFallbackReply(userText)).slice(0, 600);
+        `You are a friendly, natural human on WhatsApp. Reply naturally to the user in their language (Hindi, Hinglish, or English). ` +
+        `If they ask "hi kaise ho" or "how are you", reply warmly like "Haan main bilkul badhiya hoon, aap batao kaise ho?". Keep it natural and concise.\n\nUser: ${userText}`;
+    const aiText = await callGemini(prompt, 0.95);
+    return (aiText || fallbackChatReply(userText)).slice(0, 600);
 }
 
-async function generateDirectAI(userPrompt) {
-    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+async function generateDirectReply(userPrompt) {
     const prompt =
-        `Answer the user's message directly, smartly, and naturally in the same language and tone as the user. [ctx:${uniqueTag}]\n\nMessage: ${userPrompt}`;
-    const reply = await callGeminiWithFallback(prompt, 0.9);
-    return (reply || buildNaturalFallbackReply(userPrompt)).slice(0, 1600);
+        `Answer directly and naturally in the user's language.\n\nMessage: ${userPrompt}`;
+    const aiText = await callGemini(prompt, 0.9);
+    return (aiText || fallbackChatReply(userPrompt)).slice(0, 1600);
 }
 // =========================================================================
 
@@ -526,7 +255,7 @@ const SET_KEYS = {
     anc5: 'sky', anc6: 'animals', anc7: 'fruits'
 };
 
-function extractTextFromMessage(rawMsg) {
+function extractText(rawMsg) {
     const content = extractMessageContent(rawMsg) || rawMsg;
     if (!content) return '';
     return (
@@ -535,21 +264,17 @@ function extractTextFromMessage(rawMsg) {
         content.imageMessage?.caption ||
         content.videoMessage?.caption ||
         content.documentMessage?.caption ||
-        content.buttonsResponseMessage?.selectedDisplayText ||
-        content.listResponseMessage?.title ||
         ''
     ).trim();
 }
 
-function getTargetUsers(raw, content, argsText) {
+function getTargets(raw, content, argsText) {
     const mentioned = content?.extendedTextMessage?.contextInfo?.mentionedJid || [];
     if (mentioned.length > 0) return mentioned;
     const participant = content?.extendedTextMessage?.contextInfo?.participant;
     if (participant) return [participant];
-    const num = normalizeStrictPhone(argsText);
-    if (num) return [`${num}@s.whatsapp.net`];
-    const rawDigits = extractRawId(argsText);
-    if (rawDigits) return [`${rawDigits}@s.whatsapp.net`];
+    const d = cleanDigits(argsText);
+    if (d) return [`${d}@s.whatsapp.net`];
     return [];
 }
 
@@ -574,12 +299,12 @@ async function getFastVersion() {
 // =========================================================================
 
 // =========================================================================
-// 5. SESSION & PAIRING WORKER (SAFE ISOLATED SOCKETS)
+// 5. SESSION & COMMAND ENGINE
 // =========================================================================
 class Session {
     constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false, isPrimary = false) {
         this.id = id;
-        this.phone = normalizeStrictPhone(phone);
+        this.phone = cleanDigits(phone);
         this.hub = hub;
         this.requesterJid = requesterJid;
         this.freshAuth = freshAuth;
@@ -588,11 +313,7 @@ class Session {
 
         this.socket = null;
         this.online = false;
-        this.self = null;
-        this.selfLid = null;
         this.otpPrinted = false;
-        this.lastRealCode = null;
-
         this.pairingBusy = false;
         this.connecting = false;
         this.sessionReady = false;
@@ -667,9 +388,7 @@ class Session {
         this.clearTimers();
         this.stopAllLoops();
         await this.closeSocketCleanly();
-        if (!keepAuth) {
-            removeDirSafe(this.getAuthDir());
-        }
+        if (!keepAuth) removeDirSafe(this.getAuthDir());
     }
 
     dedupeLocal(msgId) {
@@ -682,10 +401,7 @@ class Session {
 
     scheduleReconnect(reasonLabel = 'disconnect', customDelayMs = null) {
         if (this.stopped || this.reconnectTimer) return;
-        if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            console.log(`[RECONNECT PAUSED] +${this.phone} (${reasonLabel}) — kept server alive`);
-            return;
-        }
+        if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
         this.reconnectAttempts += 1;
         const backoffMs = customDelayMs ?? Math.min(12000, 1200 * Math.pow(1.35, this.reconnectAttempts - 1));
         this.reconnectTimer = setTimeout(() => {
@@ -702,27 +418,18 @@ class Session {
         for (let attempt = 1; attempt <= 5; attempt++) {
             try {
                 await delay(1200 * attempt);
-                if (this.stopped || this.socket !== sock) {
-                    throw new Error('Socket closed or replaced during pairing');
-                }
-                if (!sock || typeof sock.requestPairingCode !== 'function') {
-                    throw new Error('requestPairingCode not available on socket');
-                }
-                console.log(`[RENDER ${sourceTag} ATTEMPT ${attempt}] +${this.phone} requesting code...`);
+                if (this.stopped || this.socket !== sock) throw new Error('Socket closed');
+                if (!sock || typeof sock.requestPairingCode !== 'function') throw new Error('requestPairingCode missing');
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 8);
                 if (clean.length >= 6) {
                     const formatted = clean.match(/.{1,4}/g)?.join('-') || clean;
-                    this.lastRealCode = formatted;
-                    console.log(`\n╔══════════════════════════════════════════════════╗`);
-                    console.log(`║ [RENDER LOGS PAIRING CODE] +${this.phone} => ${formatted}`);
-                    console.log(`╚══════════════════════════════════════════════════╝\n`);
+                    console.log(`\n[PAIRING CODE] +${this.phone} (${sourceTag}) => ${formatted}\n`);
                     return formatted;
                 }
-                lastErr = new Error('Empty or invalid code returned');
+                lastErr = new Error('Empty pairing code');
             } catch (err) {
                 lastErr = err;
-                console.log(`[RENDER ${sourceTag} ERR ${attempt}] +${this.phone}:`, err?.message || err);
             }
         }
         throw lastErr || new Error('Failed to generate pairing code');
@@ -736,7 +443,6 @@ class Session {
             if (this.pairingBusy && !this.sessionReady) {
                 this.pairingBusy = false;
                 this.connecting = false;
-                console.log(`[PAIR WATCHDOG] +${this.phone} safely resetting pairing state`);
             }
         }, PAIR_LOGIN_WATCH_MS);
     }
@@ -766,10 +472,8 @@ class Session {
 
         sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
             if (this.stopped || this.socket !== sock) return;
-
             if (connection === "connecting") {
                 this.connecting = true;
-                console.log(`[RENDER SOCKET CONNECTING] +${this.phone}`);
             } else if (connection === "open") {
                 if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
                 this.online = true;
@@ -777,20 +481,11 @@ class Session {
                 this.pairingBusy = false;
                 this.sessionReady = true;
                 this.reconnectAttempts = 0;
-                if (sock.user?.id) {
-                    const sNum = extractRawId(sock.user.id);
-                    this.self = `${sNum}@s.whatsapp.net`;
-                    if (sock.user?.lid) {
-                        const lNum = extractRawId(sock.user.lid);
-                        this.selfLid = `${lNum}@lid`;
-                        linkPhoneAndLid(sNum, lNum);
-                    }
-                }
-                console.log(`[RENDER ONLINE] +${this.phone} linked & ready`);
+                console.log(`[ONLINE] +${this.phone}`);
                 if (this.requesterJid) {
                     await this.sendInstant(this.requesterJid, boxCard(`✅ 𝗕𝗢𝗧 𝗟𝗜𝗡𝗞𝗘𝗗 ✅`, [
                         `*${g('NUMBER')}* : +${this.phone}`,
-                        `*${g('STATUS')}* : 🟢 ${g('CONNECTED & READY')}`
+                        `*${g('STATUS')}* : 🟢 ${g('CONNECTED')}`
                     ]));
                 }
             } else if (connection === "close") {
@@ -799,22 +494,14 @@ class Session {
                 this.sessionReady = false;
                 if (this.stopped) return;
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
-                const errMsg = lastDisconnect?.error?.message || '';
-                console.log(`[RENDER CONN CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
-
                 if (statusCode === DisconnectReason.loggedOut) {
-                    if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
                     this.pairingBusy = false;
                     removeDirSafe(authDir);
                     return;
                 }
-
                 this.pairingBusy = false;
-                if (!this.isPrimary && !this.sessionReady) {
-                    console.log(`[UNPAIRED SESSION IDLE] +${this.phone} waiting for manual relink or !addbot`);
-                    return;
-                }
-                this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired' : 'close', 1000);
+                if (!this.isPrimary && !this.sessionReady) return;
+                this.scheduleReconnect('close', 1000);
             }
         });
 
@@ -825,8 +512,6 @@ class Session {
     async pairFreshInChat() {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
-
-        console.log(`[RENDER ADDBOT SETUP] +${this.phone} -> generating code in Render logs first...`);
 
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
         if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
@@ -841,18 +526,14 @@ class Session {
         this.sessionReady = false;
         this.reconnectAttempts = 0;
         this.otpPrinted = true;
-        this.lastRealCode = null;
         this.armPairingWatchdog();
 
         try {
             const { sock } = await this.createSocket(authDir);
-            const realCode = await this.requestRealSocketCode(sock, 'ADDBOT');
-            return realCode;
+            return await this.requestRealSocketCode(sock, 'ADDBOT');
         } catch (err) {
-            if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
             this.pairingBusy = false;
             this.connecting = false;
-            console.log(`[RENDER ADDBOT FAILED] +${this.phone}:`, err?.message || err);
             throw err;
         }
     }
@@ -860,15 +541,11 @@ class Session {
     async tryLogPrimaryCodeOnce(sock) {
         if (!this.logOtpOnce || this.otpPrinted || this.pairingBusy || this.stopped || this.online) return;
         if (sock?.authState?.creds?.registered) return;
-
         this.otpPrinted = true;
         this.pairingBusy = true;
-        console.log(`[RENDER PRIMARY BOOT] +${this.phone} -> printing pairing code in Render logs...`);
         try {
             await this.requestRealSocketCode(sock, 'BOOT');
-        } catch (err) {
-            console.log(`[RENDER PRIMARY FAILED] +${this.phone}:`, err?.message || err);
-        } finally {
+        } catch {} finally {
             this.pairingBusy = false;
         }
     }
@@ -898,15 +575,14 @@ class Session {
     }
 
     async onGroupParticipantsUpdate(ev) {
-        if (this.stopped || runtimeState.botPaused || !this.online || !this.socket) return;
+        if (this.stopped || botPaused || !this.online || !this.socket) return;
         const groupJid = ev?.id;
         if (!groupJid || !groupJid.endsWith('@g.us')) return;
         if (ev.action === 'add' && gcSettings.welcome?.[groupJid]) {
             const participants = ev.participants || [];
-            const mentions = participants.filter(Boolean);
-            const names = mentions.map(j => `@${extractRawId(j)}`).join(', ');
+            const names = participants.map(j => `@${cleanDigits(j)}`).join(', ');
             if (names) {
-                await this.sendInstant(groupJid, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS')}* : ${names}`]), mentions);
+                await this.sendInstant(groupJid, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS')}* : ${names}`]), participants);
             }
         }
     }
@@ -925,74 +601,75 @@ class Session {
                 if (!this.dedupeLocal(raw.key.id)) continue;
 
                 const content = extractMessageContent(raw.message) || raw.message;
-                const body = extractTextFromMessage(raw.message);
+                const body = extractText(raw.message);
                 if (!body) continue;
 
                 const isGroup = chat.endsWith('@g.us');
                 const isFromMe = Boolean(raw.key.fromMe);
-                const sender = isFromMe
-                    ? (this.self || this.selfLid || `${this.phone}@s.whatsapp.net`)
-                    : (raw.key.participant || raw.participant || chat);
-
-                if (isFromMe && !isGroup && chat.endsWith('@s.whatsapp.net')) {
-                    const chatDigits = extractRawId(chat);
-                    if (chatDigits && PRIMARY_OWNER_NUM && chatDigits !== PRIMARY_OWNER_NUM) {
-                        const myLid = extractRawId(this.selfLid);
-                        if (myLid) linkPhoneAndLid(PRIMARY_OWNER_NUM, myLid);
-                    }
-                }
-
+                const sender = raw.key.participant || raw.participant || chat;
                 const cmd = body.toLowerCase().trim();
-                const isMaster = isSingleOwner(sender, this.self, this.selfLid, isFromMe);
-                const allowed = canExecuteBotCommand(sender, this.self, this.selfLid, isFromMe);
 
-                if (isMaster && (cmd === `${PREFIX}start` || cmd === '+start')) {
+                const master = isMasterMsg(raw, sender);
+                const allowed = isAllowedMsg(raw, sender);
+
+                if (master && cmd === `${PREFIX}start`) {
                     this.hub.resumeAllBots();
-                    await this.sendInstant(chat, GRAND_START_BANNER());
+                    await this.sendInstant(chat, boxCard(`⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`, [
+                        `*${g('STATUS')}* : 🟢 ${g('ACTIVE')}`,
+                        `*${g('SHARED')}* : ${ALLOWED_NUMBERS.size} ${g('USERS')}`
+                    ]));
                     continue;
                 }
 
-                if (isMaster && (cmd === `${PREFIX}killall` || cmd === '-all')) {
+                if (master && cmd === `${PREFIX}killall`) {
                     this.hub.pauseAllBotsKeepSessionAlive();
-                    await this.sendInstant(chat, KILL_ALL_BANNER());
+                    await this.sendInstant(chat, boxCard(`🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗞𝗜𝗟𝗟𝗘𝗗 🛑`, [
+                        `*${g('STATUS')}* : ⏸️ ${g('STOPPED FOR ALL')}`
+                    ]));
                     continue;
                 }
 
-                if (isMaster && (cmd === `${PREFIX}allow` || cmd.startsWith(`${PREFIX}allow `))) {
+                if (master && (cmd === `${PREFIX}allow` || cmd.startsWith(`${PREFIX}allow `))) {
                     const argPart = body.slice(PREFIX.length + 5).trim();
-                    const targets = getTargetUsers(raw, content, argPart);
-                    const rawTarget = targets[0] || argPart;
-                    const grantedId = grantFullAccess(rawTarget);
-                    if (!grantedId) {
+                    const targets = getTargets(raw, content, argPart);
+                    const targetDigits = cleanDigits(targets[0] || argPart);
+                    if (!targetDigits) {
                         await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}allow +919876543210`]));
                         continue;
                     }
-                    await this.sendInstant(chat, ACCESS_GRANTED_CARD(grantedId));
+                    ALLOWED_NUMBERS.add(targetDigits);
+                    await this.sendInstant(chat, boxCard(`⚡ 𝗔𝗖𝗖𝗘𝗦𝗦 𝗧𝗥𝗔𝗡𝗦𝗙𝗘𝗥𝗥𝗘𝗗 ⚡`, [
+                        `*${g('USER')}*   : +${targetDigits}`,
+                        `*${g('ACCESS')}* : 🔥 ${g('UNLOCKED')}`
+                    ]));
                     continue;
                 }
 
-                if (isMaster && (cmd === `${PREFIX}revoke` || cmd.startsWith(`${PREFIX}revoke `))) {
+                if (master && (cmd === `${PREFIX}revoke` || cmd.startsWith(`${PREFIX}revoke `))) {
                     const argPart = body.slice(PREFIX.length + 6).trim();
-                    const targets = getTargetUsers(raw, content, argPart);
-                    const rawTarget = targets[0] || argPart;
-                    const { id: targetId, removed } = revokeFullAccess(rawTarget);
-                    if (!targetId) {
+                    const targets = getTargets(raw, content, argPart);
+                    const targetDigits = cleanDigits(targets[0] || argPart);
+                    if (!targetDigits) {
                         await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}revoke +919876543210`]));
                         continue;
                     }
-                    await this.sendInstant(chat, ACCESS_REVOKED_CARD(targetId, removed));
+                    const existed = ALLOWED_NUMBERS.delete(targetDigits);
+                    await this.sendInstant(chat, boxCard(`🛑 𝗔𝗖𝗖𝗘𝗦𝗦 𝗥𝗘𝗩𝗢𝗞𝗘𝗗 🛑`, [
+                        `*${g('USER')}*   : +${targetDigits}`,
+                        `*${g('STATUS')}* : ${existed ? `🔴 ${g('REVOKED')}` : `⚠️ ${g('NOT IN LIST')}`}`
+                    ]));
                     continue;
                 }
 
-                if (isMaster && (cmd === `${PREFIX}accesslist` || cmd === `${PREFIX}sharedlist`)) {
-                    const allIds = [...new Set([...accessData.allowedNums, ...accessData.allowedLids])];
-                    await this.sendInstant(chat, boxCard(`🔑 𝗦𝗛𝗔𝗥𝗘𝗗 𝗔𝗖𝗖𝗘𝗦𝗦 (${allIds.length}) 🔑`,
-                        allIds.length ? allIds.map((id, i) => `*${i + 1}.* +${id} ➔ 🟢 ${g('FULL ACCESS')}`) : [`*${g('LIST')}* : ${g('NO SHARED NUMBERS')}`]
+                if (master && cmd === `${PREFIX}accesslist`) {
+                    const list = [...ALLOWED_NUMBERS];
+                    await this.sendInstant(chat, boxCard(`🔑 𝗔𝗖𝗖𝗘𝗦𝗦 𝗟𝗜𝗦𝗧 (${list.length}) 🔑`,
+                        list.length ? list.map((n, i) => `*${i + 1}.* +${n}`) : [g('NO SHARED USERS')]
                     ));
                     continue;
                 }
 
-                if (runtimeState.botPaused) continue;
+                if (botPaused) continue;
 
                 if (AUTO_READ_MESSAGES && !isFromMe) {
                     this.socket?.readMessages([raw.key]).catch(() => {});
@@ -1001,272 +678,120 @@ class Session {
                 if (isGroup && !allowed && gcSettings.antiLink?.[chat] && hasLink(body)) {
                     try {
                         await this.socket.sendMessage(chat, { delete: raw.key });
-                        await this.sendInstant(chat, boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [
-                            `*${g('USER')}*   : @${extractRawId(sender)}`,
-                            `*${g('ACTION')}* : ${g('LINK DELETED')}`
-                        ]), [sender]);
+                        await this.sendInstant(chat, boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('USER')}* : @${cleanDigits(sender)}`]), [sender]);
                     } catch {}
                     continue;
                 }
 
-                const isCommandText = body.startsWith(PREFIX) || body.startsWith('+') || body.startsWith('-');
+                const isCommandText = body.startsWith(PREFIX);
 
                 if (allowed && isCommandText) {
-                    if (cmd === `${PREFIX}ping` || cmd === '+ping') {
-                        const activeCnt = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
-                        const sharedCnt = new Set([...accessData.allowedNums, ...accessData.allowedLids]).size;
-                        await this.sendInstant(chat, boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
-                            `*${g('ONLINE')}* : ${activeCnt} ${g('SESSIONS')}`,
-                            `*${g('SHARED')}* : ${sharedCnt} ${g('USERS')}`,
-                            `*${g('UPTIME')}* : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
+                    if (cmd === `${PREFIX}menu`) {
+                        await this.sendInstant(chat, MENU_TEXT());
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}ping`) {
+                        await this.sendInstant(chat, boxCard(`⚡ 𝗣𝗜𝗡𝗚 ⚡`, [
+                            `*${g('UPTIME')}* : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`,
+                            `*${g('SHARED')}* : ${ALLOWED_NUMBERS.size}`
                         ]));
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}status` || cmd === '+status') {
-                        const total = [...this.hub.sessions.values()].filter(s => !s.stopped).length;
-                        const online = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
-                        const loops = this.nameLoops.size + this.txtLoop.size;
-                        await this.sendInstant(chat, boxCard(`📊 𝗘𝗡𝗚𝗜𝗡𝗘 𝗦𝗧𝗔𝗧𝗨𝗦 📊`, [
-                            `*${g('ENGINE')}* : ${runtimeState.botPaused ? `⏸️ ${g('PAUSED')}` : `🟢 ${g('ACTIVE')}`}`,
-                            `*${g('BOTS')}*   : ${online}/${total} ${g('ONLINE')}`,
-                            `*${g('LOOPS')}*  : ${loops} ${g('RUNNING')}`
-                        ]));
+                    if (cmd === `${PREFIX}autoreply on`) {
+                        autoReplyChats.add(getReplyKey(this.phone, chat));
+                        await this.sendInstant(chat, boxCard(`🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗡 🤖`, [`*${g('AI & REACTION')}* : 🟢 ${g('ACTIVE')}`]));
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}autoreply status`) {
-                        await this.sendInstant(chat, boxCard(`🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗦𝗧𝗔𝗧𝗨𝗦 🤖`, [
-                            `*${g('THIS CHAT')}* : ${isChatAutoReplyOn(this.phone, chat) ? `🟢 ${g('ON')}` : `🔴 ${g('OFF')}`}`
-                        ]));
+                    if (cmd === `${PREFIX}autoreply off`) {
+                        autoReplyChats.delete(getReplyKey(this.phone, chat));
+                        await this.sendInstant(chat, boxCard(`⛔ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗙𝗙 ⛔`, [`*${g('AI & REACTION')}* : 🔴 ${g('OFF')}`]));
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}autoreply on` || cmd === '+autoreply on') {
-                        setChatAutoReply(this.phone, chat, true);
-                        await this.sendInstant(chat, AUTO_REPLY_BANNER(true));
-                        continue;
-                    }
-
-                    if (cmd === `${PREFIX}autoreply off` || cmd === '+autoreply off') {
-                        setChatAutoReply(this.phone, chat, false);
-                        await this.sendInstant(chat, AUTO_REPLY_BANNER(false));
-                        continue;
-                    }
-
-                    if (isMaster && cmd.startsWith(`${PREFIX}unpair `)) {
-                        const cleanNum = normalizeStrictPhone(body.slice(PREFIX.length + 7).trim());
+                    if (master && cmd.startsWith(`${PREFIX}addbot `)) {
+                        const cleanNum = cleanDigits(body.slice(PREFIX.length + 8).trim());
                         if (!cleanNum) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}unpair +9647882064284`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('USAGE')}* : ${PREFIX}addbot +9647882064284`]));
                             continue;
                         }
-                        const removed = await this.hub.unpairNumber(cleanNum);
-                        await this.sendInstant(chat, boxCard(`🗑️ 𝗦𝗘𝗦𝗦𝗜𝗢𝗡 𝗨𝗡𝗣𝗔𝗜𝗥𝗘𝗗 🗑️`, [
-                            `*${g('NUMBER')}* : +${cleanNum}`,
-                            `*${g('RESULT')}* : ${removed ? `✅ ${g('REMOVED')}` : `⚠️ ${g('NOT FOUND')}`}`
-                        ]));
-                        continue;
-                    }
-
-                    if (isMaster && (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ') || cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink '))) {
-                        const rawNum = body.replace(new RegExp(`^(\\${PREFIX}(addbot|relink)|\\+(pair|relink))\\s+`, 'i'), '').trim();
-                        const cleanNum = normalizeStrictPhone(rawNum);
-                        if (!cleanNum) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +9647882064284`]));
-                            continue;
-                        }
-
-                        await this.sendInstant(chat, pairWaitCard(cleanNum, PAIR_WAIT_SECONDS));
-
+                        await this.sendInstant(chat, boxCard(`⏳ 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('WAIT')}* : ~${PAIR_WAIT_SECONDS}s`]));
                         try {
-                            const realCode = await this.hub.addNumberInChat(cleanNum, chat);
-                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, realCode));
+                            const code = await this.hub.addNumberInChat(cleanNum, chat);
+                            await this.sendInstant(chat, boxCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('CODE')}* : \`${code}\``]));
                         } catch (err) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [
-                                `*${g('NUMBER')}* : +${cleanNum}`,
-                                `*${g('REASON')}* : ${err.message}`
-                            ]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('REASON')}* : ${err.message}`]));
                         }
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}bots` || cmd === '+bots') {
-                        const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
-                        await this.sendInstant(chat, list.length
-                            ? BOTS_LIST_BANNER(list)
-                            : boxCard(`📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 ${g('NUMBERS ADDED')}`])
-                        );
+                    if (master && cmd.startsWith(`${PREFIX}unpair `)) {
+                        const cleanNum = cleanDigits(body.slice(PREFIX.length + 7).trim());
+                        const ok = await this.hub.unpairNumber(cleanNum);
+                        await this.sendInstant(chat, boxCard(`🗑️ 𝗨𝗡𝗣𝗔𝗜𝗥 🗑️`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATUS')}* : ${ok ? g('REMOVED') : g('NOT FOUND')}`]));
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}menu` || cmd === '+menu') { await this.sendInstant(chat, MENU_TEXT()); continue; }
-                    if (cmd === `${PREFIX}targetmenu`) { await this.sendInstant(chat, TARGET_MENU()); continue; }
-                    if (cmd === `${PREFIX}grpmenu`) { await this.sendInstant(chat, GRP_MENU()); continue; }
-                    if (cmd === `${PREFIX}games`) { await this.sendInstant(chat, GAMES_MENU()); continue; }
+                    if (cmd === `${PREFIX}bots`) {
+                        const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
+                        await this.sendInstant(chat, boxCard(`📱 𝗕𝗢𝗧𝗦 (${list.length}) 📱`,
+                            list.length ? list.map((s, i) => `*${i + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('ONLINE')}` : `🟡 ${g('STANDBY')}`}`) : [g('NONE')]
+                        ));
+                        continue;
+                    }
 
                     if (cmd === `${PREFIX}lockgc` || cmd === `${PREFIX}unlockgc`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
+                        if (!isGroup) continue;
                         try {
                             await this.socket.groupSettingUpdate(chat, cmd === `${PREFIX}lockgc` ? 'announcement' : 'not_announcement');
-                            await this.sendInstant(chat, boxCard(cmd === `${PREFIX}lockgc` ? `🔒 𝗚𝗥𝗢𝗨𝗣 𝗟𝗢𝗖𝗞𝗘𝗗 🔒` : `🔓 𝗚𝗥𝗢𝗨𝗣 𝗨𝗡𝗟𝗢𝗖𝗞𝗘𝗗 🔓`, [`*${g('STATUS')}* : ${g('UPDATED')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}promote`) || cmd.startsWith(`${PREFIX}demote`) || cmd.startsWith(`${PREFIX}mute`) || cmd.startsWith(`${PREFIX}kick`) || cmd.startsWith(`${PREFIX}remove`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const argPart = body.replace(new RegExp(`^\\${PREFIX}(promote|demote|mute|kick|remove)\\s*`, 'i'), '').trim();
-                        const targets = getTargetUsers(raw, content, argPart);
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        try {
-                            const action = cmd.startsWith(`${PREFIX}promote`) ? 'promote' : (cmd.startsWith(`${PREFIX}demote`) ? 'demote' : 'remove');
-                            await this.socket.groupParticipantsUpdate(chat, targets, action);
-                            await this.sendInstant(chat, boxCard(`✅ 𝗔𝗖𝗧𝗜𝗢𝗡 𝗗𝗢𝗡𝗘 ✅`, [`*${g('ACTION')}* : ${g(action)}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}unmute`) || cmd.startsWith(`${PREFIX}add `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const rawTarget = body.replace(new RegExp(`^\\${PREFIX}(unmute|add)\\s*`, 'i'), '').trim();
-                        const targets = getTargetUsers(raw, content, rawTarget);
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}add +919876543210`])); continue; }
-                        try {
-                            await this.socket.groupParticipantsUpdate(chat, targets, 'add');
-                            await this.sendInstant(chat, boxCard(`➕ 𝗔𝗗𝗗𝗘𝗗 𝗕𝗔𝗖𝗞 ➕`, [`*${g('STATUS')}* : ${g('ADDED TO GC')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗔𝗗𝗗 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('REASON')}* : ${g('PRIVACY OR ADMIN LIMIT')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}warn`) || cmd.startsWith(`${PREFIX}unwarn`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const isUnwarn = cmd.startsWith(`${PREFIX}unwarn`);
-                        const argPart = body.replace(new RegExp(`^\\${PREFIX}(unwarn|warn)\\s*`, 'i'), '').trim();
-                        const targets = getTargetUsers(raw, content, argPart);
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        const target = targets[0];
-                        gcSettings.warns[chat] = gcSettings.warns[chat] || {};
-                        if (isUnwarn) {
-                            delete gcSettings.warns[chat][target];
-                            saveGcSettings();
-                            await this.sendInstant(chat, boxCard(`✅ 𝗪𝗔𝗥𝗡𝗦 𝗖𝗟𝗘𝗔𝗥𝗘𝗗 ✅`, [`*${g('USER')}* : @${extractRawId(target)}`]), [target]);
-                        } else {
-                            const nextCount = (gcSettings.warns[chat][target] || 0) + 1;
-                            gcSettings.warns[chat][target] = nextCount;
-                            saveGcSettings();
-                            if (nextCount >= MAX_WARNS_BEFORE_KICK) {
-                                gcSettings.warns[chat][target] = 0;
-                                saveGcSettings();
-                                try {
-                                    await this.socket.groupParticipantsUpdate(chat, [target], 'remove');
-                                    await this.sendInstant(chat, boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}* : @${extractRawId(target)}`]), [target]);
-                                } catch {
-                                    await this.sendInstant(chat, boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${extractRawId(target)}`]), [target]);
-                                }
-                            } else {
-                                await this.sendInstant(chat, boxCard(`⚠️ 𝗪𝗔𝗥𝗡𝗜𝗡𝗚 ⚠️`, [`*${g('USER')}* : @${extractRawId(target)}`, `*${g('WARNS')}* : ${nextCount}/${MAX_WARNS_BEFORE_KICK}`]), [target]);
-                            }
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}setname `) || cmd.startsWith(`${PREFIX}setdesc `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const isName = cmd.startsWith(`${PREFIX}setname `);
-                        const val = body.slice(PREFIX.length + 8).trim();
-                        if (!val) continue;
-                        try {
-                            if (isName) await this.socket.groupUpdateSubject(chat, val);
-                            else await this.socket.groupUpdateDescription(chat, val);
-                            await this.sendInstant(chat, boxCard(`✅ 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 ✅`, [`*${g('STATUS')}* : ${g('SAVED')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd === `${PREFIX}antilink on` || cmd === `${PREFIX}antilink off` || cmd === `${PREFIX}welcome on` || cmd === `${PREFIX}welcome off`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const enabled = cmd.endsWith(' on');
-                        if (cmd.startsWith(`${PREFIX}antilink`)) gcSettings.antiLink[chat] = enabled;
-                        else gcSettings.welcome[chat] = enabled;
-                        saveGcSettings();
-                        await this.sendInstant(chat, boxCard(`🛡️ 𝗦𝗘𝗧𝗧𝗜𝗡𝗚 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 🛡️`, [`*${g('MODE')}* : ${enabled ? `🟢 ${g('ENABLED')}` : `🔴 ${g('DISABLED')}`}`]));
-                        continue;
-                    }
-
-                    if (cmd === `${PREFIX}groupinfo` || cmd === `${PREFIX}admins`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        try {
-                            const meta = await this.socket.groupMetadata(chat);
-                            const adminList = (meta.participants || []).filter(p => p.admin === 'admin' || p.admin === 'superadmin');
-                            const mentions = adminList.map(p => p.id);
-                            if (cmd === `${PREFIX}admins`) {
-                                await this.sendInstant(chat, boxCard(`👑 𝗔𝗗𝗠𝗜𝗡𝗦 (${mentions.length}) 👑`, mentions.length ? mentions.map(j => `@${extractRawId(j)}`) : [g('NONE')]), mentions);
-                            } else {
-                                await this.sendInstant(chat, boxCard(`📌 𝗚𝗥𝗢𝗨𝗣 𝗜𝗡𝗙𝗢 📌`, [
-                                    `*${g('NAME')}*    : ${meta.subject}`,
-                                    `*${g('MEMBERS')}* : ${meta.participants?.length || 0}`,
-                                    `*${g('ADMINS')}*  : ${mentions.length}`
-                                ]), mentions);
-                            }
+                            await this.sendInstant(chat, boxCard(`🔒 𝗚𝗥𝗢𝗨𝗣 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 🔒`, [`*${g('STATUS')}* : ${g('DONE')}`]));
                         } catch {}
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}tagall` || cmd.startsWith(`${PREFIX}tagall `) || cmd === `${PREFIX}everyone` || cmd.startsWith(`${PREFIX}everyone `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
+                    if (cmd.startsWith(`${PREFIX}kick`) || cmd.startsWith(`${PREFIX}promote`) || cmd.startsWith(`${PREFIX}demote`)) {
+                        if (!isGroup) continue;
+                        const argPart = body.replace(new RegExp(`^\\${PREFIX}(kick|promote|demote)\\s*`, 'i'), '').trim();
+                        const targets = getTargets(raw, content, argPart);
+                        if (!targets.length) continue;
+                        try {
+                            const action = cmd.startsWith(`${PREFIX}promote`) ? 'promote' : (cmd.startsWith(`${PREFIX}demote`) ? 'demote' : 'remove');
+                            await this.socket.groupParticipantsUpdate(chat, targets, action);
+                            await this.sendInstant(chat, boxCard(`✅ 𝗗𝗢𝗡𝗘 ✅`, [`*${g('ACTION')}* : ${g(action)}`]));
+                        } catch {}
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}tagall` || cmd.startsWith(`${PREFIX}tagall `)) {
+                        if (!isGroup) continue;
                         try {
                             const meta = await this.socket.groupMetadata(chat);
                             const members = (meta.participants || []).map(p => p.id).filter(Boolean);
-                            const note = body.replace(new RegExp(`^\\${PREFIX}(tagall|everyone)\\s*`, 'i'), '').trim() || 'Attention!';
+                            const note = body.slice(PREFIX.length + 6).trim() || 'Hello!';
                             for (let i = 0; i < members.length; i += 20) {
-                                if (runtimeState.botPaused || this.stopped) break;
+                                if (botPaused || this.stopped) break;
                                 const slice = members.slice(i, i + 20);
-                                await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${note}`, slice.map(j => `@${extractRawId(j)}`).join(' ')]), slice);
+                                await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${note}`, slice.map(j => `@${cleanDigits(j)}`).join(' ')]), slice);
                                 if (i + 20 < members.length) await delay(650);
                             }
                         } catch {}
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}flip`) {
-                        await this.sendInstant(chat, boxCard(`🪙 𝗖𝗢𝗜𝗡 𝗙𝗟𝗜𝗣 🪙`, [`*${g('RESULT')}* : ${Math.random() < 0.5 ? g('HEADS') : g('TAILS')}`]));
-                        continue;
-                    }
-
-                    if (cmd === `${PREFIX}roll`) {
-                        await this.sendInstant(chat, boxCard(`🎲 𝗗𝗜𝗖𝗘 𝗥𝗢𝗟𝗟 🎲`, [`*${g('NUMBER')}* : *${Math.floor(Math.random() * 6) + 1}*`]));
-                        continue;
-                    }
-
-                    if (cmd === `${PREFIX}rps` || cmd.startsWith(`${PREFIX}rps `)) {
-                        const picks = ['rock', 'paper', 'scissors'];
-                        await this.sendInstant(chat, boxCard(`🎮 𝗥𝗣𝗦 🎮`, [
-                            `*${g('YOU')}* : ${g(body.slice(PREFIX.length + 3).trim().toLowerCase() || 'RANDOM')}`,
-                            `*${g('BOT')}* : ${g(picks[Math.floor(Math.random() * picks.length)])}`
-                        ]));
-                        continue;
-                    }
-
                     if (cmd === `${PREFIX}ancstop` || cmd === `${PREFIX}stoptxt`) {
                         this.stopAllLoops();
-                        await this.sendInstant(chat, boxCard(`🛑 𝗟𝗢𝗢𝗣𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`, [`*${g('STATUS')}* : ${g('ALL ACTIVE LOOPS HALTED')}`]));
+                        await this.sendInstant(chat, boxCard(`🛑 𝗟𝗢𝗢𝗣𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`, [`*${g('STATUS')}* : ${g('STOPPED')}`]));
                         continue;
                     }
 
-                    if (cmd.startsWith('+ai ') || cmd.startsWith(`${PREFIX}ai `)) {
-                        const prompt = body.slice(body.startsWith('+ai ') ? 4 : PREFIX.length + 3).trim();
+                    if (cmd.startsWith(`${PREFIX}ai `)) {
+                        const prompt = body.slice(PREFIX.length + 3).trim();
                         if (!prompt) continue;
                         const reqEpoch = GLOBAL_EPOCH;
-                        const reply = await generateDirectAI(prompt);
-                        if (!runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH && canExecuteBotCommand(sender, this.self, this.selfLid, isFromMe)) {
+                        const reply = await generateDirectReply(prompt);
+                        if (!botPaused && reqEpoch === GLOBAL_EPOCH && isAllowedMsg(raw, sender)) {
                             await this.sendInstant(chat, boxCard(`🧠 𝗦𝗠𝗪 𝗔𝗜 🧠`, [reply]));
                         }
                         continue;
@@ -1290,11 +815,9 @@ class Session {
                     for (const [key, setName] of Object.entries(SET_KEYS)) {
                         if (cmd.startsWith(`${PREFIX}${key} `)) {
                             matchedAnc = true;
+                            if (!isGroup) break;
                             const rawArgs = body.slice(PREFIX.length + key.length + 1).trim();
-                            if (!rawArgs || !isGroup) {
-                                if (!isGroup) await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`]));
-                                break;
-                            }
+                            if (!rawArgs) break;
                             const parts = rawArgs.split(/\s+/);
                             const maybeMs = Number(parts[parts.length - 1]);
                             let ms = getSafeDelay(timingMap[key] || DEFAULT_LOOP_MS);
@@ -1314,23 +837,23 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
-                if (!runtimeState.botPaused && isChatAutoReplyOn(this.phone, chat) && !isFromMe && body && !isCommandText) {
+                if (!botPaused && autoReplyChats.has(getReplyKey(this.phone, chat)) && !isFromMe && body && !isCommandText) {
                     const reqEpoch = GLOBAL_EPOCH;
                     const chosenEmoji = pickRandomReaction();
                     this.enqueueSend(async () => {
-                        if (!this.stopped && !runtimeState.botPaused && this.socket && isChatAutoReplyOn(this.phone, chat)) {
+                        if (!this.stopped && !botPaused && this.socket && autoReplyChats.has(getReplyKey(this.phone, chat))) {
                             await this.socket.sendMessage(chat, { react: { text: chosenEmoji, key: raw.key } });
                         }
                     });
 
-                    const replyKey = `${String(chat).trim()}__${extractRawId(sender)}`;
+                    const replyKey = `${String(chat).trim()}__${cleanDigits(sender)}`;
                     const lastTs = this.lastAutoReplyAt.get(replyKey) || 0;
                     if (Date.now() - lastTs >= AUTO_REPLY_COOLDOWN_MS) {
                         this.lastAutoReplyAt.set(replyKey, Date.now());
                         (async () => {
                             try {
-                                const replyText = await generateFullAIConversationReply(body);
-                                if (replyText && !runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH && isChatAutoReplyOn(this.phone, chat) && !this.stopped) {
+                                const replyText = await generateChatReply(body);
+                                if (replyText && !botPaused && reqEpoch === GLOBAL_EPOCH && autoReplyChats.has(getReplyKey(this.phone, chat)) && !this.stopped) {
                                     await this.sendQuoted(chat, replyText, raw);
                                 }
                             } catch {}
@@ -1339,12 +862,12 @@ class Session {
                 }
             }
         } catch (err) {
-            console.log('[RECEIVE SAFE ERR]', err?.message || err);
+            console.log('[RECEIVE ERR]', err?.message || err);
         }
     }
 
     async handle(cmd, payload, notify = true) {
-        if (this.stopped || runtimeState.botPaused) return;
+        if (this.stopped || botPaused) return;
         const { chat } = payload;
         const startEpoch = GLOBAL_EPOCH;
         try {
@@ -1362,7 +885,7 @@ class Session {
 
                 let idx = 0;
                 (async () => {
-                    while (!this.stopped && !runtimeState.botPaused && startEpoch === GLOBAL_EPOCH && stateObj.active && this.nameLoops.get(tid) === stateObj) {
+                    while (!this.stopped && !botPaused && startEpoch === GLOBAL_EPOCH && stateObj.active && this.nameLoops.get(tid) === stateObj) {
                         if (this.socket) {
                             const emo1 = emojis[idx % emojis.length];
                             const emo2 = emojis[(idx + 3) % emojis.length];
@@ -1371,13 +894,13 @@ class Session {
                         }
                         let elapsed = 0;
                         while (elapsed < safeDelay) {
-                            if (this.stopped || runtimeState.botPaused || startEpoch !== GLOBAL_EPOCH || !stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
+                            if (this.stopped || botPaused || startEpoch !== GLOBAL_EPOCH || !stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
                             await delay(Math.min(100, safeDelay - elapsed));
                             elapsed += 100;
                         }
                     }
                 })();
-                if (notify) await this.sendInstant(chat, loopStartLayout(key, `DELAY: ${safeDelay}ms`));
+                if (notify) await this.sendInstant(chat, boxCard(`🔥 ${key.toUpperCase()} STARTED 🔥`, [`*${g('DELAY')}* : ${safeDelay}ms`]));
             } else if (cmd === 'txt_start') {
                 const { txt, ms } = payload;
                 const safeDelay = getSafeDelay(ms ?? DEFAULT_LOOP_MS);
@@ -1389,7 +912,7 @@ class Session {
                 this.txtLoop.set(txtKey, loopObj);
 
                 (async () => {
-                    while (!this.stopped && !runtimeState.botPaused && startEpoch === GLOBAL_EPOCH && loopObj.active && this.txtLoop.get(txtKey) === loopObj) {
+                    while (!this.stopped && !botPaused && startEpoch === GLOBAL_EPOCH && loopObj.active && this.txtLoop.get(txtKey) === loopObj) {
                         if (this.socket) {
                             try {
                                 const sent = await this.socket.sendMessage(chat, { text: txt });
@@ -1398,13 +921,13 @@ class Session {
                         }
                         let elapsed = 0;
                         while (elapsed < safeDelay) {
-                            if (this.stopped || runtimeState.botPaused || startEpoch !== GLOBAL_EPOCH || !loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
+                            if (this.stopped || botPaused || startEpoch !== GLOBAL_EPOCH || !loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
                             await delay(Math.min(100, safeDelay - elapsed));
                             elapsed += 100;
                         }
                     }
                 })();
-                if (notify) await this.sendInstant(chat, loopStartLayout('text loop', `DELAY: ${safeDelay}ms`));
+                if (notify) await this.sendInstant(chat, boxCard(`🔥 TEXT LOOP STARTED 🔥`, [`*${g('DELAY')}* : ${safeDelay}ms`]));
             }
         } catch {}
     }
@@ -1441,7 +964,7 @@ function sockSafeBind(session, targetSock = session.socket) {
     if (!targetSock) return;
     targetSock.ev.on('messages.upsert', m => {
         if (session.socket !== targetSock) return;
-        session.receive(m).catch(err => console.log('[UPSERT SAFE ERR]', err?.message || err));
+        session.receive(m).catch(err => console.log('[UPSERT ERR]', err?.message || err));
     });
     targetSock.ev.on('group-participants.update', ev => {
         if (session.socket !== targetSock) return;
@@ -1451,7 +974,7 @@ function sockSafeBind(session, targetSock = session.socket) {
 // =========================================================================
 
 // =========================================================================
-// 6. HUB QUEUE & SERVER ENTRYPOINT
+// 6. HUB & SERVER
 // =========================================================================
 class Hub {
     constructor() {
@@ -1463,7 +986,7 @@ class Hub {
     loadSavedNumbers() {
         const saved = readJson(PATH_BOTS, { numbers: [] });
         const list = Array.isArray(saved.numbers) ? saved.numbers : [];
-        const cleanList = list.map(normalizeStrictPhone).filter(Boolean);
+        const cleanList = list.map(cleanDigits).filter(Boolean);
         if (CONFIGURED_BOT_NUMBER && !cleanList.includes(CONFIGURED_BOT_NUMBER)) {
             cleanList.unshift(CONFIGURED_BOT_NUMBER);
         }
@@ -1475,11 +998,10 @@ class Hub {
     }
 
     async addNumberInChat(phone, requesterJid = null) {
-        const clean = normalizeStrictPhone(phone);
+        const clean = cleanDigits(phone);
         if (!clean) throw new Error('Invalid phone number');
 
         const runTask = async () => {
-            console.log(`[RENDER QUEUE] Pairing +${clean} -> printing code in Render logs first...`);
             const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
             const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
             for (const [key, oldSess] of existingEntries) {
@@ -1503,7 +1025,7 @@ class Hub {
     }
 
     async unpairNumber(phone) {
-        const clean = normalizeStrictPhone(phone);
+        const clean = cleanDigits(phone);
         if (!clean) return false;
         let found = false;
         for (const [key, sess] of [...this.sessions.entries()]) {
@@ -1521,16 +1043,14 @@ class Hub {
 
     pauseAllBotsKeepSessionAlive() {
         GLOBAL_EPOCH += 1;
-        runtimeState.botPaused = true;
-        runtimeState.autoReplyChats = {};
-        saveRuntimeState();
+        botPaused = true;
+        autoReplyChats.clear();
         for (const sess of this.sessions.values()) sess.stopAllLoops();
     }
 
     resumeAllBots() {
         GLOBAL_EPOCH += 1;
-        runtimeState.botPaused = false;
-        saveRuntimeState();
+        botPaused = false;
     }
 
     async shutdownAll() {
@@ -1557,7 +1077,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/health', (_req, res) => {
-    res.status(200).json({ ok: true, service: 'SMW Render Engine', paused: runtimeState.botPaused });
+    res.status(200).json({ ok: true, paused: botPaused });
 });
 
 function startKeepAlive() {
@@ -1569,16 +1089,6 @@ function startKeepAlive() {
         try { await fetch(pingUrl); } catch {}
     }, intervalMs);
 }
-
-console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — LID + PHONE UNIVERSAL ENGINE ⚡
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Primary Master    : ${PRIMARY_OWNER_NUM ? `+${PRIMARY_OWNER_NUM}` : 'NOT SET'}
-  Shared Users      : ${new Set([...accessData.allowedNums, ...accessData.allowedLids]).size} ACTIVE
-  Initial State     : STANDBY (Send !start)
-  Port              : ${PORT}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`);
 
 process.on('uncaughtException', err => console.log('[SAFE UNCAUGHT]', err?.message || err));
 process.on('unhandledRejection', err => console.log('[SAFE REJECTION]', err?.message || err));
