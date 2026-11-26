@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 — COMPLETE RENDER + WHATSAPP ENGINE         ║
-// ║   Unlimited Numbers • Render Logs Code -> WA • Gemini AI     ║
+// ║         𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER PAIRING & BOT ENGINE (V2)          ║
+// ║   WhatsApp !addbot -> Render Socket -> Render Log OTP -> WA  ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -42,7 +42,7 @@ const PATH_GC        = './store/gc_settings.json';
 // =========================================================================
 
 // =========================================================================
-// 2. STORAGE & PHONE NORMALIZATION HELPERS
+// 2. STORAGE & PHONE NORMALIZATION
 // =========================================================================
 try {
     fs.mkdirSync('./store', { recursive: true });
@@ -167,7 +167,7 @@ const grantOwner = j => {
 // =========================================================================
 
 // =========================================================================
-// 3. EMOJIS, STYLING & GEMINI AI ENGINE
+// 3. EMOJIS, STYLING & GEMINI AI
 // =========================================================================
 const RAW_EMOJI_STRING = "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃❤️🔥⚡👑💀🎯💣🌀🎭🪬🧿💎🗡️🐉☠️";
 const REACTION_POOL = Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(RAW_EMOJI_STRING))
@@ -226,10 +226,10 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
     const rawCode = String(formattedCode || '').replace(/[^A-Z0-9]/gi, '');
     return boxCard(title, [
         `*${g('NUMBER')}* : +${cleanNum}`,
-        `*${g('CODE')}*   : \`${formattedCode}\``,
-        `*${g('PLAIN')}*  : \`${rawCode}\``,
-        `*${g('STEPS')}*  : ${g('WHATSAPP > LINKED DEVICES')}`,
-        `*${g('LOGS')}*   : ${g('PRINTED IN RENDER LOGS')}`
+        `*${g('OTP CODE')}* : \`${formattedCode}\``,
+        `*${g('PLAIN')}*    : \`${rawCode}\``,
+        `*${g('STEPS')}*    : ${g('WHATSAPP > LINKED DEVICES')}`,
+        `*${g('RENDER')}*   : ${g('PRINTED IN LOGS')}`
     ]);
 };
 
@@ -542,9 +542,12 @@ class Session {
 
     async requestRealSocketCode(sock) {
         let lastErr = null;
-        for (let attempt = 1; attempt <= 4; attempt++) {
+        for (let attempt = 1; attempt <= 5; attempt++) {
             try {
-                await delay(400 * attempt);
+                await delay(800 * attempt);
+                if (this.stopped || this.socket !== sock) {
+                    throw new Error('Socket replaced or stopped during pairing');
+                }
                 if (!sock || typeof sock.requestPairingCode !== 'function') {
                     throw new Error('requestPairingCode not available on socket');
                 }
@@ -554,14 +557,14 @@ class Session {
                     const formatted = clean.match(/.{1,4}/g)?.join('-') || clean;
                     this.lastRealCode = formatted;
                     console.log(`\n╔══════════════════════════════════════════════╗`);
-                    console.log(`║ [RENDER PAIRING CODE] +${this.phone} => ${formatted}`);
+                    console.log(`║ [RENDER OTP] +${this.phone} => ${formatted}`);
                     console.log(`╚══════════════════════════════════════════════╝\n`);
                     return formatted;
                 }
                 lastErr = new Error('Socket returned empty/short code');
             } catch (err) {
                 lastErr = err;
-                console.log(`[RENDER CODE ATTEMPT ${attempt} FAILED] +${this.phone}:`, err?.message || err);
+                console.log(`[RENDER OTP ATTEMPT ${attempt} FAILED] +${this.phone}:`, err?.message || err);
             }
         }
         throw lastErr || new Error('Failed to fetch real pairing code from WhatsApp socket');
@@ -609,6 +612,7 @@ class Session {
 
             if (connection === "connecting") {
                 this.connecting = true;
+                console.log(`[SOCKET CONNECTING] +${this.phone}`);
             } else if (connection === "open") {
                 if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
                 this.online = true;
@@ -654,7 +658,7 @@ class Session {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
 
-        console.log(`[RENDER PAIR START] +${this.phone} — opening fresh socket...`);
+        console.log(`[RENDER PAIR START] +${this.phone} — creating fresh auth & socket...`);
 
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
         if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
@@ -691,7 +695,7 @@ class Session {
 
         this.otpPrinted = true;
         this.pairingBusy = true;
-        console.log(`[RENDER PRIMARY PAIR] +${this.phone} — requesting pairing code in Render logs...`);
+        console.log(`[RENDER PRIMARY PAIR] +${this.phone} — requesting OTP in Render logs...`);
         try {
             await this.requestRealSocketCode(sock);
         } catch (err) {
@@ -870,10 +874,10 @@ class Session {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +9647882064284`]));
                             continue;
                         }
-                        console.log(`[RENDER CMD PAIR] +${cleanNum} requested from chat ${chat}`);
+                        console.log(`[RENDER CMD] +${cleanNum} requested from ${chat}`);
                         try {
                             const realCode = await this.hub.addNumberInChat(cleanNum, chat);
-                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, realCode));
+                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗢𝗧𝗣 🔑`, cleanNum, realCode));
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [
                                 `*${g('NUMBER')}* : +${cleanNum}`,
@@ -1272,7 +1276,7 @@ class Hub {
         if (!clean) throw new Error('Invalid phone number');
 
         const runTask = async () => {
-            console.log(`[RENDER QUEUE] Pairing +${clean}...`);
+            console.log(`[RENDER QUEUE] Adding & pairing +${clean}...`);
             const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
             const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
             for (const [key, oldSess] of existingEntries) {
@@ -1368,7 +1372,7 @@ console.log(`
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Bot       : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
   Gemini AI         : ENABLED (${GEMINI_MODELS.join(', ')})
-  Pairing Flow      : Render Logs -> WhatsApp Chat
+  Pairing Flow      : Render Log OTP -> WhatsApp Chat
   Initial State     : STANDBY (Send !start)
   Port              : ${PORT}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
