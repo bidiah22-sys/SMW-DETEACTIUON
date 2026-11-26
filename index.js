@@ -1,3 +1,4 @@
+
 // ╔══════════════════════════════════════════════╗
 // ║                  𝗦𝗠𝗪 𝗜𝗢𝗦                     ║
 // ║         Multi-Bot WhatsApp Manager           ║
@@ -462,7 +463,7 @@ function hasLink(text) {
 }
 
 // ═════════════════════════════════════════════
-//  SESSION MANAGER (STRICTLY ISOLATED PER NUMBER)
+//  SESSION MANAGER (ISOLATED & CRASH-SAFE)
 // ═════════════════════════════════════════════
 class Session {
     constructor(id, phone, hub, requesterJid = null, freshAuth = false, autoPairOnInit = true) {
@@ -892,14 +893,12 @@ class Session {
                     continue;
                 }
 
-                // Strictly silent/idle when KILL ALL is active; pairing remains connected
                 if (runtimeState.botPaused) continue;
 
                 if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
                     this.socket?.readMessages([raw.key]).catch(() => {});
                 }
 
-                // Anti-link guard in groups when enabled
                 if (isGroup && !isOwn && gcSettings.antiLink?.[chat] && hasLink(body)) {
                     try {
                         await this.socket.sendMessage(chat, { delete: raw.key });
@@ -1342,7 +1341,6 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
-                // Strictly Per-Chat Auto-Reply + Massive Varied Emoji Reactions
                 if (
                     !runtimeState.botPaused &&
                     isChatAutoReplyOn(this.phone, chat) &&
