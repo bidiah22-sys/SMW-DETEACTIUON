@@ -1,8 +1,8 @@
 {
   "name": "smw-ios-whatsapp-manager",
-  "version": "16.0.0",
+  "version": "18.0.0",
   "type": "module",
-  "description": "SMW IOS Multi-Bot WhatsApp Manager (Instant Commands & Single Pairing Code)",
+  "description": "SMW IOS WhatsApp Manager v18 (101% Auto-Reply, Clean Layouts & Zero-Crash Core)",
   "main": "index.js",
   "engines": {
     "node": ">=18"
