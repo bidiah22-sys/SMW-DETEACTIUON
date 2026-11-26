@@ -1,5 +1,5 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.4                        ║
+// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.6                        ║
 // ║          Multi-Bot WhatsApp Manager & Loop Engine            ║
 // ╚══════════════════════════════════════════════════════════════╝
 
@@ -310,6 +310,16 @@ ${rows.map(r => `│ ▸ ${r}`).join('\n')}
 ╰─────────────────────────╯
 💗 *${TAG}*`;
 
+const pairingCodeCard = (title, cleanNum, formattedCode) => {
+    const rawCode = formattedCode.replace(/[^A-Z0-9]/gi, '');
+    return boxCard(title, [
+        `*${g('NUMBER')}* : +${cleanNum}`,
+        `*${g('TAP COPY')}* : \`${formattedCode}\``,
+        `*${g('PLAIN')}*    : \`${rawCode}\``,
+        `*${g('STATUS')}*   : ${g('LINK IN WHATSAPP')}`
+    ]);
+};
+
 const GRAND_START_BANNER = () => boxCard(
     `⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`,
     [
@@ -317,7 +327,7 @@ const GRAND_START_BANNER = () => boxCard(
         `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
         `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
         `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`,
-        `*${g('PAIRING')}*     : 📱 ${g('INSTANT CHAT CODE READY')}`
+        `*${g('PAIRING')}*     : 📱 ${g('TAP-TO-COPY CODE READY')}`
     ]
 );
 
@@ -347,7 +357,7 @@ const BOTS_LIST_BANNER = (list) => boxCard(
 );
 
 const MENU_TEXT = () => boxCard(
-    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.4 🚩`,
+    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.6 🚩`,
     [
         `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
         `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
@@ -476,13 +486,14 @@ async function getFastVersion() {
 //  SESSION MANAGER
 // ═════════════════════════════════════════════
 class Session {
-    constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false) {
+    constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false, isPrimary = false) {
         this.id = id;
         this.phone = normalizeStrictPhone(phone);
         this.hub = hub;
         this.requesterJid = requesterJid;
         this.freshAuth = freshAuth;
         this.logOtpOnce = logOtpOnce;
+        this.isPrimary = isPrimary;
         this.socket = null;
         this.online = false;
         this.self = null;
@@ -508,8 +519,8 @@ class Session {
             for (const [k, v] of this.processedMsgs) {
                 if (now - v > 90000) this.processedMsgs.delete(k);
             }
-            if (this.msgCache.size > 300) this.msgCache.clear();
-            if (this.sentByBotIds.size > 400) this.sentByBotIds.clear();
+            if (this.msgCache.size > 250) this.msgCache.clear();
+            if (this.sentByBotIds.size > 350) this.sentByBotIds.clear();
         }, 90000);
     }
 
@@ -562,7 +573,7 @@ class Session {
         let lastErr = null;
         for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(800 * attempt);
+                await delay(700 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '')
                     .replace(/[^A-Z0-9]/gi, '')
@@ -641,7 +652,7 @@ class Session {
                     if (sock.user?.lid) {
                         this.selfLid = sock.user.lid.split(':')[0] + '@lid';
                     }
-                    console.log(`[ONLINE] +${this.phone} linked fast`);
+                    console.log(`[ONLINE] +${this.phone} linked & ready`);
                     if (this.requesterJid) {
                         await this.sendInstant(
                             this.requesterJid,
@@ -660,7 +671,6 @@ class Session {
                         removeDirSafe(authDir);
                         return;
                     }
-                    // After code is sent, let reconnect settle without wiping pairing session
                     if (!this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
@@ -668,7 +678,7 @@ class Session {
                                 this.pairingBusy = false;
                                 this.init();
                             }
-                        }, 1800);
+                        }, 1500);
                     }
                 }
             });
@@ -790,7 +800,7 @@ class Session {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped && !this.pairingBusy) this.init();
-                        }, 2000);
+                        }, 1800);
                     }
                 }
             });
@@ -894,14 +904,7 @@ class Session {
                         }
                         try {
                             const code = await this.hub.addNumberInChat(cleanNum, chat);
-                            await this.sendInstant(
-                                chat,
-                                boxCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, [
-                                    `*${g('NUMBER')}* : +${cleanNum}`,
-                                    `*${g('CODE')}*   : *${code}*`,
-                                    `*${g('STATUS')}* : ${g('LINK WITHIN 60S')}`
-                                ])
-                            );
+                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, code));
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
                         }
@@ -917,14 +920,7 @@ class Session {
                         }
                         try {
                             const code = await this.hub.addNumberInChat(cleanNum, chat);
-                            await this.sendInstant(
-                                chat,
-                                boxCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, [
-                                    `*${g('NUMBER')}* : +${cleanNum}`,
-                                    `*${g('CODE')}*   : *${code}*`,
-                                    `*${g('STATUS')}* : ${g('LINK WITHIN 60S')}`
-                                ])
-                            );
+                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, cleanNum, code));
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
                         }
@@ -1528,14 +1524,17 @@ class Hub {
         const clean = normalizeStrictPhone(phone);
         if (!clean) throw new Error('Invalid phone number');
 
-        const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
-        for (const [key, oldSess] of existingEntries) {
-            await oldSess.destroySession();
-            this.sessions.delete(key);
+        const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
+        if (!isTargetPrimary) {
+            const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
+            for (const [key, oldSess] of existingEntries) {
+                await oldSess.destroySession();
+                this.sessions.delete(key);
+            }
         }
 
         const id = String(this.counter++);
-        const session = new Session(id, clean, this, requesterJid, true, false);
+        const session = new Session(id, clean, this, requesterJid, true, false, isTargetPrimary);
         this.sessions.set(id, session);
 
         const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
@@ -1568,19 +1567,19 @@ class Hub {
         for (const num of numbers) {
             const id = String(this.counter++);
             const isPrimary = Boolean(CONFIGURED_BOT_NUMBER && num === CONFIGURED_BOT_NUMBER);
-            const session = new Session(id, num, this, null, false, isPrimary);
+            const session = new Session(id, num, this, null, false, isPrimary, isPrimary);
             this.sessions.set(id, session);
             await session.init();
-            await delay(600);
+            await delay(500);
         }
     }
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.4 ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.6 ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Browser Profile   : Ubuntu Chrome (Fast Mode)
+  Browser Profile   : Ubuntu Chrome (Safe Fast)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
