@@ -1,5 +1,5 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.1                        ║
+// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.2                        ║
 // ║          Multi-Bot WhatsApp Manager & Loop Engine            ║
 // ╚══════════════════════════════════════════════════════════════╝
 
@@ -352,7 +352,7 @@ const BOTS_LIST_BANNER = (list) => boxCard(
 );
 
 const MENU_TEXT = () => boxCard(
-    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.1 🚩`,
+    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.2 🚩`,
     [
         `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
         `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
@@ -462,6 +462,16 @@ function hasLink(text) {
     return /(https?:\/\/|www\.|chat\.whatsapp\.com\/|t\.me\/|instagram\.com\/|youtube\.com\/|youtu\.be\/)/i.test(text || '');
 }
 
+async function resolveBaileysVersionSafe() {
+    try {
+        const versionPromise = fetchLatestBaileysVersion();
+        const timeoutPromise = new Promise(resolve => setTimeout(() => resolve(null), 4000));
+        const res = await Promise.race([versionPromise, timeoutPromise]);
+        if (res?.version) return res.version;
+    } catch {}
+    return [2, 3000, 1015901307];
+}
+
 // ═════════════════════════════════════════════
 //  SESSION MANAGER
 // ═════════════════════════════════════════════
@@ -529,19 +539,24 @@ class Session {
         this.lastAutoReplyAt.clear();
     }
 
+    closeCurrentSocketOnly() {
+        if (!this.socket) return;
+        try {
+            if (this.socket.ev?.removeAllListeners) this.socket.ev.removeAllListeners();
+        } catch {}
+        try {
+            if (this.socket.ws?.close) this.socket.ws.close();
+            if (this.socket.end) this.socket.end(undefined);
+        } catch {}
+        this.socket = null;
+    }
+
     async destroySession() {
         this.stopped = true;
         this.online = false;
         this.clearTimers();
         this.stopAllLoops();
-        try {
-            if (this.socket?.ev?.removeAllListeners) this.socket.ev.removeAllListeners();
-        } catch {}
-        try {
-            if (this.socket?.ws?.close) this.socket.ws.close();
-            if (this.socket?.end) this.socket.end(undefined);
-        } catch {}
-        this.socket = null;
+        this.closeCurrentSocketOnly();
         removeDirSafe(this.getAuthDir());
     }
 
@@ -557,7 +572,7 @@ class Session {
         let lastErr = null;
         for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(1500 * attempt);
+                await delay(1400 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '')
                     .replace(/[^A-Z0-9]/gi, '')
@@ -583,45 +598,40 @@ class Session {
         console.log(`╚══════════════════════════════════════════════╝\n`);
     }
 
-    armPairingWatchdog(authDir) {
+    armPairingWatchdog() {
         if (this.pairingWatchdog) clearTimeout(this.pairingWatchdog);
-        // If pairing stays stuck in login/pending for > 90s without opening, release lock cleanly
         this.pairingWatchdog = setTimeout(() => {
             if (this.stopped || this.online) return;
             this.pairingBusy = false;
-            console.log(`[PAIR TIMEOUT] +${this.phone} did not finish login in 90s; resetting state.`);
         }, 90000);
     }
 
     async pairFreshInChat() {
         if (!this.phone) throw new Error('Invalid phone number');
 
+        if (this.reconnectTimer) {
+            clearTimeout(this.reconnectTimer);
+            this.reconnectTimer = null;
+        }
+
         const authDir = this.getAuthDir();
         removeDirSafe(authDir);
-        ensureDir(authDir);
-
-        if (this.socket) {
-            try {
-                this.socket.ev.removeAllListeners();
-                if (this.socket.ws?.close) this.socket.ws.close();
-            } catch {}
-            this.socket = null;
-        }
+        this.closeCurrentSocketOnly();
 
         this.pairingBusy = true;
         this.otpPrinted = true;
-        this.armPairingWatchdog(authDir);
+        this.armPairingWatchdog();
 
         try {
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
-            const { version } = await fetchLatestBaileysVersion();
+            const version = await resolveBaileysVersionSafe();
 
             const sock = makeWASocket({
                 auth: state,
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -634,18 +644,18 @@ class Session {
             sock.ev.on("creds.update", saveCreds);
 
             sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-                if (this.stopped) return;
+                if (this.stopped || this.socket !== sock) return;
                 if (connection === "open") {
                     if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
                     this.online = true;
                     this.pairingBusy = false;
-                    if (this.socket?.user?.id) {
-                        this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
+                    if (sock.user?.id) {
+                        this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                     }
-                    if (this.socket?.user?.lid) {
-                        this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
+                    if (sock.user?.lid) {
+                        this.selfLid = sock.user.lid.split(':')[0] + '@lid';
                     }
-                    console.log(`[ONLINE] +${this.phone} linked & active`);
+                    console.log(`[ONLINE] +${this.phone} linked & ready`);
                     if (this.requesterJid) {
                         await this.sendInstant(
                             this.requesterJid,
@@ -664,7 +674,6 @@ class Session {
                         removeDirSafe(authDir);
                         return;
                     }
-                    // Allow reconnect once pairing code is already issued so login handshake completes
                     if (!this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
@@ -672,12 +681,12 @@ class Session {
                                 this.pairingBusy = false;
                                 this.init();
                             }
-                        }, 2000);
+                        }, 2500);
                     }
                 }
             });
 
-            sockSafeBind(this);
+            sockSafeBind(this, sock);
 
             const formattedCode = await this.requestCleanCode(sock);
             this.printCodeInLogsOnce('ADDED NUMBER CODE', formattedCode);
@@ -725,15 +734,14 @@ class Session {
 
     async init() {
         try {
-            if (!this.phone || this.pairingBusy) return;
+            if (!this.phone || this.stopped || this.pairingBusy) return;
 
-            if (this.socket) {
-                try {
-                    this.socket.ev.removeAllListeners();
-                    if (this.socket.ws?.close) this.socket.ws.close();
-                } catch {}
-                this.socket = null;
+            if (this.reconnectTimer) {
+                clearTimeout(this.reconnectTimer);
+                this.reconnectTimer = null;
             }
+
+            this.closeCurrentSocketOnly();
 
             const authDir = this.getAuthDir();
             if (this.freshAuth) {
@@ -743,16 +751,16 @@ class Session {
             ensureDir(authDir);
 
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
-            const { version } = await fetchLatestBaileysVersion();
+            const version = await resolveBaileysVersionSafe();
 
-            if (this.stopped) return;
+            if (this.stopped || this.pairingBusy) return;
 
-            this.socket = makeWASocket({
+            const sock = makeWASocket({
                 auth: state,
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.macOS("Desktop"),
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -761,24 +769,25 @@ class Session {
                 getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
             });
 
-            this.socket.ev.on("creds.update", saveCreds);
+            this.socket = sock;
+            sock.ev.on("creds.update", saveCreds);
 
-            if (this.logOtpOnce && !this.socket.authState?.creds?.registered && !this.otpPrinted) {
-                this.tryLogPrimaryCodeOnce(this.socket).catch(() => {});
+            if (this.logOtpOnce && !sock.authState?.creds?.registered && !this.otpPrinted) {
+                this.tryLogPrimaryCodeOnce(sock).catch(() => {});
             }
 
-            this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-                if (this.stopped) return;
+            sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
+                if (this.stopped || this.socket !== sock) return;
 
                 if (connection === "open") {
                     if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
                     this.online = true;
                     this.pairingBusy = false;
-                    if (this.socket?.user?.id) {
-                        this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
+                    if (sock.user?.id) {
+                        this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                     }
-                    if (this.socket?.user?.lid) {
-                        this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
+                    if (sock.user?.lid) {
+                        this.selfLid = sock.user.lid.split(':')[0] + '@lid';
                     }
                     console.log(`[ONLINE] +${this.phone} logged in`);
                 } else if (connection === "close") {
@@ -791,13 +800,13 @@ class Session {
                     if (statusCode !== DisconnectReason.loggedOut && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped) this.init();
-                        }, 2500);
+                            if (!this.stopped && !this.pairingBusy) this.init();
+                        }, 3000);
                     }
                 }
             });
 
-            sockSafeBind(this);
+            sockSafeBind(this, sock);
         } catch (e) {
             console.error(`[${this.id}] Init error:`, e.message);
         }
@@ -1491,14 +1500,17 @@ class Session {
     }
 }
 
-function sockSafeBind(session) {
-    session.socket.ev.on('messages.upsert', m => {
+function sockSafeBind(session, targetSock = session.socket) {
+    if (!targetSock) return;
+    targetSock.ev.on('messages.upsert', m => {
+        if (session.socket !== targetSock) return;
         session.receive(m).catch(err => {
             console.log('[UPSERT SAFE ERR]', err?.message || err);
         });
     });
 
-    session.socket.ev.on('group-participants.update', ev => {
+    targetSock.ev.on('group-participants.update', ev => {
+        if (session.socket !== targetSock) return;
         session.onGroupParticipantsUpdate(ev).catch(() => {});
     });
 }
@@ -1570,16 +1582,16 @@ class Hub {
             const session = new Session(id, num, this, null, false, isPrimary);
             this.sessions.set(id, session);
             await session.init();
-            await delay(1000);
+            await delay(1200);
         }
     }
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.1 ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.2 ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Browser Profile   : macOS Desktop (Stable)
+  Browser Profile   : Ubuntu Chrome (Stable)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
