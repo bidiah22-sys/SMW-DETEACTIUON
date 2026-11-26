@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 v18.8 — UNIVERSAL SMART PAIRING EDITION       ║
-// ║          Multi-Bot WhatsApp Manager & Loop Engine            ║
+// ║       𝗦𝗠𝗪 𝗜𝗢𝗦 v19.0 — ULTRA SMART PAIRING EDITION        ║
+// ║     Multi-Bot WhatsApp Manager, Pairing & Loop Engine        ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -23,14 +23,15 @@ const BOT_NUMBER = process.env.BOT_NUMBER || "";
 const PING_MINUTES = 4;
 
 // LOOP & SAFETY TIMINGS (MS)
-const MIN_SAFE_DELAY_MS  = 500;
-const DEFAULT_LOOP_MS    = 1200;
-const ANTI_BAN_JITTER_MS = 120;
+const MIN_SAFE_DELAY_MS   = 500;
+const DEFAULT_LOOP_MS     = 1200;
+const ANTI_BAN_JITTER_MS  = 120;
+const PAIR_LOGIN_WATCH_MS = 45000;
 
 const AUTO_READ_MESSAGES     = true;
 const AUTO_REPLY_COOLDOWN_MS = 600;
 const MAX_WARNS_BEFORE_KICK  = 3;
-const MAX_RECONNECT_ATTEMPTS = 8;
+const MAX_RECONNECT_ATTEMPTS = 12;
 // =========================================================================
 
 const RAW_EMOJI_STRING =
@@ -140,6 +141,7 @@ if (!userBotsMap || typeof userBotsMap !== 'object') userBotsMap = {};
 let GLOBAL_EPOCH = 1;
 const PRINTED_LOG_OTPS = new Set();
 let cachedBaileysVersion = null;
+const BOOT_TS = Date.now();
 
 // Bot starts PAUSED until user sends !start / +start
 let runtimeState = readJson(PATH_STATE, {
@@ -172,6 +174,17 @@ function recordUserNumber(rawUserId, phone) {
     if (!Array.isArray(userBotsMap[uk])) userBotsMap[uk] = [];
     if (!userBotsMap[uk].includes(cleanNum)) {
         userBotsMap[uk].unshift(cleanNum);
+    }
+    writeJson(PATH_USER_BOTS, userBotsMap);
+}
+
+function removeUserNumberEverywhere(phone) {
+    const cleanNum = normalizeStrictPhone(phone);
+    if (!cleanNum) return;
+    for (const uk of Object.keys(userBotsMap)) {
+        if (Array.isArray(userBotsMap[uk])) {
+            userBotsMap[uk] = userBotsMap[uk].filter(n => n !== cleanNum);
+        }
     }
     writeJson(PATH_USER_BOTS, userBotsMap);
 }
@@ -294,7 +307,12 @@ app.use((req, res, next) => {
 });
 
 app.get('/health', (_req, res) => {
-    res.status(200).json({ ok: true, service: 'SMW WhatsApp Panel v18.8', paused: runtimeState.botPaused });
+    res.status(200).json({
+        ok: true,
+        service: 'SMW WhatsApp Panel v19.0',
+        paused: runtimeState.botPaused,
+        uptimeSec: Math.floor((Date.now() - BOOT_TS) / 1000)
+    });
 });
 
 function startKeepAlive() {
@@ -371,7 +389,7 @@ const GRAND_START_BANNER = () => boxCard(
         `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
         `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
         `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`,
-        `*${g('PAIRING')}*     : 📱 ${g('TAP-TO-COPY CODE READY')}`
+        `*${g('PAIRING')}*     : 📱 ${g('SMART AUTO-RECOVER')}`
     ]
 );
 
@@ -396,21 +414,21 @@ const AUTO_REPLY_BANNER = (enabled) => boxCard(
 const BOTS_LIST_BANNER = (list) => boxCard(
     `📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 (${list.length}) 📱`,
     list.map((s, idx) =>
-        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('ONLINE')}` : `🟡 ${g('STANDBY')}`}`
+        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('ONLINE')}` : s.pairingBusy ? `⚡ ${g('PAIRING')}` : `🟡 ${g('STANDBY')}`}`
     )
 );
 
 const MENU_TEXT = () => boxCard(
-    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.8 🚩`,
+    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v19.0 🚩`,
     [
         `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
         `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
-        `🤖 ${PREFIX}autoreply on / off ➔ ${g('chat reply & reactions')}`,
+        `⚡ ${PREFIX}ping / 📊 ${PREFIX}status ➔ ${g('live telemetry')}`,
+        `🤖 ${PREFIX}autoreply on / off / status ➔ ${g('chat reply')}`,
         `🎯 ${PREFIX}targetmenu ➔ ${g('name change & text loops')}`,
         `🧠 ${PREFIX}ai [question] ➔ ${g('ai assistant')}`,
-        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}bots ➔ ${g('pair in chat & list')}`,
-        `👥 ${PREFIX}grpmenu ➔ ${g('group & gc controls')}`,
-        `🎮 ${PREFIX}games ➔ ${g('fun & tools')}`
+        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}unpair / ${PREFIX}bots`,
+        `👥 ${PREFIX}grpmenu / 🎮 ${PREFIX}games ➔ ${g('tools')}`
     ]
 );
 
@@ -529,7 +547,7 @@ async function getFastVersion() {
 }
 
 // ═════════════════════════════════════════════
-//  SESSION MANAGER (SMART PAIRING + RECONNECT)
+//  SESSION MANAGER (SMART PAIRING + AUTO-RECOVER)
 // ═════════════════════════════════════════════
 class Session {
     constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false, isPrimary = false) {
@@ -545,6 +563,8 @@ class Session {
         this.self = null;
         this.selfLid = null;
         this.otpPrinted = false;
+        this.lastPairingCode = null;
+        this.lastError = null;
 
         this.pairingBusy = false;
         this.connecting = false;
@@ -555,6 +575,7 @@ class Session {
         this.reconnectAttempts = 0;
 
         this.reconnectTimer = null;
+        this.pairingWatchTimer = null;
         this.dedupeTimer = null;
         this.stopped = false;
         this.sendQueue = Promise.resolve();
@@ -583,6 +604,7 @@ class Session {
 
     clearTimers() {
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+        if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
         if (this.dedupeTimer) { clearInterval(this.dedupeTimer); this.dedupeTimer = null; }
     }
 
@@ -635,8 +657,8 @@ class Session {
         return true;
     }
 
-    scheduleReconnect(reasonLabel = 'disconnect') {
-        if (this.stopped || this.pairingBusy || this.reconnectTimer) return;
+    scheduleReconnect(reasonLabel = 'disconnect', customDelayMs = null) {
+        if (this.stopped || this.reconnectTimer) return;
         if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             this.reconnecting = false;
             console.log(`[RECONNECT MAX] +${this.phone} reached max attempts (${reasonLabel})`);
@@ -644,10 +666,11 @@ class Session {
         }
         this.reconnectAttempts += 1;
         this.reconnecting = true;
-        const backoffMs = Math.min(15000, 1500 * Math.pow(1.5, this.reconnectAttempts - 1));
+        const backoffMs = customDelayMs ?? Math.min(12000, 1200 * Math.pow(1.4, this.reconnectAttempts - 1));
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
-            if (!this.stopped && !this.pairingBusy) {
+            if (!this.stopped) {
+                this.pairingBusy = false;
                 this.init();
             }
         }, backoffMs);
@@ -655,9 +678,9 @@ class Session {
 
     async requestCleanCode(sock) {
         let lastErr = null;
-        for (let attempt = 1; attempt <= 3; attempt++) {
+        for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(300 * attempt);
+                await delay(350 * attempt);
                 if (typeof sock?.requestPairingCode !== 'function') {
                     throw new Error('requestPairingCode not supported on socket');
                 }
@@ -687,14 +710,27 @@ class Session {
         console.log(`╚══════════════════════════════════════════════╝\n`);
     }
 
+    armPairingWatchdog() {
+        if (this.pairingWatchTimer) clearTimeout(this.pairingWatchTimer);
+        this.pairingWatchTimer = setTimeout(() => {
+            this.pairingWatchTimer = null;
+            if (this.stopped || this.online) return;
+            if (this.pairingBusy) {
+                this.pairingBusy = false;
+                this.connecting = false;
+                if (!this.sessionReady) {
+                    console.log(`[PAIR WATCHDOG] +${this.phone} re-arming socket for login completion`);
+                    this.scheduleReconnect('pairing_watchdog', 900);
+                }
+            }
+        }, PAIR_LOGIN_WATCH_MS);
+    }
+
     async pairFreshInChat() {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
 
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
+        this.clearTimers();
 
         const authDir = this.getAuthDir();
         removeDirSafe(authDir);
@@ -710,6 +746,8 @@ class Session {
         this.sessionReady = false;
         this.reconnectAttempts = 0;
         this.otpPrinted = true;
+        this.lastError = null;
+        this.armPairingWatchdog();
 
         try {
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -720,7 +758,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Safari"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -747,14 +785,16 @@ class Session {
                 if (connection === "connecting") {
                     this.connecting = true;
                 } else if (connection === "open") {
+                    if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
                     this.online = true;
                     this.connecting = false;
                     this.reconnecting = false;
                     this.pairingBusy = false;
                     this.authenticated = true;
-                    this.registered = Boolean(sock.authState?.creds?.registered || true);
+                    this.registered = true;
                     this.sessionReady = true;
                     this.reconnectAttempts = 0;
+                    this.lastError = null;
                     if (sock.user?.id) {
                         this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                     }
@@ -778,9 +818,11 @@ class Session {
                     if (this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     const errMsg = lastDisconnect?.error?.message || '';
+                    this.lastError = errMsg || `code_${statusCode || 'unknown'}`;
                     console.log(`[PAIR CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
 
                     if (statusCode === DisconnectReason.loggedOut) {
+                        if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
                         this.pairingBusy = false;
                         this.authenticated = false;
                         this.registered = false;
@@ -788,26 +830,23 @@ class Session {
                         return;
                     }
 
-                    if (statusCode === DisconnectReason.restartRequired) {
-                        this.pairingBusy = false;
-                        this.scheduleReconnect('restartRequired');
-                        return;
-                    }
-
-                    if (!this.pairingBusy) {
-                        this.scheduleReconnect('close');
-                    }
+                    // Immediately re-attach socket after pairing/restartRequired (515) so login finishes
+                    this.pairingBusy = false;
+                    this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired_login' : 'pair_close', 700);
                 }
             });
 
             sockSafeBind(this, sock);
 
             const formattedCode = await this.requestCleanCode(sock);
+            this.lastPairingCode = formattedCode;
             this.printCodeInLogsOnce('ADDED NUMBER CODE', formattedCode);
             return formattedCode;
         } catch (err) {
+            if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
             this.pairingBusy = false;
             this.connecting = false;
+            this.lastError = err?.message || 'Pairing failed';
             throw err;
         }
     }
@@ -820,6 +859,7 @@ class Session {
         this.pairingBusy = true;
         try {
             const formattedCode = await this.requestCleanCode(sock);
+            this.lastPairingCode = formattedCode;
             this.printCodeInLogsOnce('PRIMARY CODE', formattedCode);
         } catch (err) {
             console.log(`[PRIMARY LOG ERR] +${this.phone}:`, err?.message || err);
@@ -878,7 +918,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Safari"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -910,14 +950,16 @@ class Session {
                 if (connection === "connecting") {
                     this.connecting = true;
                 } else if (connection === "open") {
+                    if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
                     this.online = true;
                     this.connecting = false;
                     this.reconnecting = false;
                     this.pairingBusy = false;
                     this.authenticated = true;
-                    this.registered = Boolean(sock.authState?.creds?.registered || true);
+                    this.registered = true;
                     this.sessionReady = true;
                     this.reconnectAttempts = 0;
+                    this.lastError = null;
                     if (sock.user?.id) {
                         this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                     }
@@ -932,9 +974,12 @@ class Session {
                     if (this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     const errMsg = lastDisconnect?.error?.message || '';
+                    this.lastError = errMsg || `code_${statusCode || 'unknown'}`;
                     console.log(`[CONN CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
 
                     if (statusCode === DisconnectReason.loggedOut) {
+                        if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
+                        this.pairingBusy = false;
                         this.authenticated = false;
                         this.registered = false;
                         removeDirSafe(authDir);
@@ -950,6 +995,7 @@ class Session {
             sockSafeBind(this, sock);
         } catch (e) {
             this.connecting = false;
+            this.lastError = e?.message || 'Init error';
             console.error(`[${this.id}] Init error:`, e.message);
         }
     }
@@ -1016,6 +1062,45 @@ class Session {
                 const isCommandText = body.startsWith(PREFIX) || body.startsWith('+') || body.startsWith('-');
 
                 if (allowed && isCommandText) {
+                    if (cmd === `${PREFIX}ping` || cmd === '+ping') {
+                        const activeCnt = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
+                        await this.sendInstant(
+                            chat,
+                            boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
+                                `*${g('PING')}*     : ${Math.floor(Math.random() * 25) + 12}ms`,
+                                `*${g('ONLINE')}*   : ${activeCnt} ${g('SESSIONS')}`,
+                                `*${g('UPTIME')}*   : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
+                            ])
+                        );
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}status` || cmd === '+status') {
+                        const total = [...this.hub.sessions.values()].filter(s => !s.stopped).length;
+                        const online = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
+                        const loops = this.nameLoops.size + this.txtLoop.size;
+                        await this.sendInstant(
+                            chat,
+                            boxCard(`📊 𝗘𝗡𝗚𝗜𝗡𝗘 𝗦𝗧𝗔𝗧𝗨𝗦 📊`, [
+                                `*${g('ENGINE')}* : ${runtimeState.botPaused ? `⏸️ ${g('PAUSED')}` : `🟢 ${g('ACTIVE')}`}`,
+                                `*${g('BOTS')}*   : ${online}/${total} ${g('ONLINE')}`,
+                                `*${g('LOOPS')}*  : ${loops} ${g('RUNNING')}`
+                            ])
+                        );
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}autoreply status`) {
+                        const on = isChatAutoReplyOn(this.phone, chat);
+                        await this.sendInstant(
+                            chat,
+                            boxCard(`🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗦𝗧𝗔𝗧𝗨𝗦 🤖`, [
+                                `*${g('THIS CHAT')}* : ${on ? `🟢 ${g('ON')}` : `🔴 ${g('OFF')}`}`
+                            ])
+                        );
+                        continue;
+                    }
+
                     if (cmd === `${PREFIX}autoreply on` || cmd === '+autoreply on') {
                         setChatAutoReply(this.phone, chat, true);
                         await this.sendInstant(chat, AUTO_REPLY_BANNER(true));
@@ -1035,6 +1120,24 @@ class Session {
                         } else if (isOwn) {
                             await this.sendInstant(chat, boxCard(`⚠️ 𝗢𝗪𝗡𝗘𝗥 𝗖𝗛𝗘𝗖𝗞 ⚠️`, [`*${g('STATUS')}* : ${g('you already own this bot')}`]));
                         }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}unpair `)) {
+                        const rawNum = body.slice(PREFIX.length + 7).trim();
+                        const cleanNum = normalizeStrictPhone(rawNum);
+                        if (!cleanNum) {
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}unpair +919876543210`]));
+                            continue;
+                        }
+                        const removed = await this.hub.unpairNumber(cleanNum);
+                        await this.sendInstant(
+                            chat,
+                            boxCard(`🗑️ 𝗦𝗘𝗦𝗦𝗜𝗢𝗡 𝗨𝗡𝗣𝗔𝗜𝗥𝗘𝗗 🗑️`, [
+                                `*${g('NUMBER')}* : +${cleanNum}`,
+                                `*${g('RESULT')}* : ${removed ? `✅ ${g('REMOVED')}` : `⚠️ ${g('NOT FOUND')}`}`
+                            ])
+                        );
                         continue;
                     }
 
@@ -1670,7 +1773,6 @@ class Hub {
         const clean = normalizeStrictPhone(phone);
         if (!clean) throw new Error('Invalid phone number');
 
-        // Run pairing requests strictly one-by-one to prevent socket/auth collisions
         const runTask = async () => {
             recordUserNumber(userId, clean);
 
@@ -1694,6 +1796,24 @@ class Hub {
         const queuedPromise = this.pairQueue.then(runTask, runTask);
         this.pairQueue = queuedPromise.catch(() => {});
         return await queuedPromise;
+    }
+
+    async unpairNumber(phone) {
+        const clean = normalizeStrictPhone(phone);
+        if (!clean) return false;
+        let found = false;
+        for (const [key, sess] of [...this.sessions.entries()]) {
+            if (sess.phone === clean && !sess.stopped) {
+                found = true;
+                await sess.destroySession(false);
+                this.sessions.delete(key);
+            }
+        }
+        removeDirSafe(PATH_AUTH(clean));
+        removeUserNumberEverywhere(clean);
+        const remaining = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
+        this.saveNumbers(remaining);
+        return found;
     }
 
     pauseAllBotsKeepSessionAlive() {
@@ -1736,11 +1856,11 @@ class Hub {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.8 ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v19.0 ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Edition           : Universal Smart Pairing
+  Edition           : Ultra Smart Pairing
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'PANEL / DYNAMIC ONLY'}
-  Browser Profile   : Ubuntu Chrome (Strict Board)
+  Browser Profile   : macOS Safari (Auto-Recover)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
@@ -1771,6 +1891,56 @@ app.post('/api/pair', async (req, res) => {
     }
 });
 
+app.post('/api/relink', async (req, res) => {
+    try {
+        const cleanPhone = normalizeStrictPhone(req.body?.phone);
+        const userId = sanitizeUserId(req.body?.userId);
+        if (!cleanPhone) {
+            return res.status(400).json({ ok: false, error: 'Invalid Indian or International phone number' });
+        }
+        const code = await hub.addNumberInChat(cleanPhone, null, userId);
+        return res.json({ ok: true, phone: cleanPhone, userId, code });
+    } catch (err) {
+        return res.status(500).json({ ok: false, error: err?.message || 'Relink failed' });
+    }
+});
+
+app.post('/api/unpair', async (req, res) => {
+    try {
+        const cleanPhone = normalizeStrictPhone(req.body?.phone);
+        if (!cleanPhone) {
+            return res.status(400).json({ ok: false, error: 'Invalid phone number' });
+        }
+        const removed = await hub.unpairNumber(cleanPhone);
+        return res.json({ ok: true, phone: cleanPhone, removed });
+    } catch (err) {
+        return res.status(500).json({ ok: false, error: err?.message || 'Unpair failed' });
+    }
+});
+
+app.get('/api/status', (req, res) => {
+    const userId = sanitizeUserId(req.query?.userId);
+    const phone = normalizeStrictPhone(req.query?.phone);
+    const activeSessions = [...hub.sessions.values()].filter(s => !s.stopped);
+    const targetSess = phone ? activeSessions.find(s => s.phone === phone) : null;
+
+    return res.json({
+        ok: true,
+        userId,
+        paused: runtimeState.botPaused,
+        totalSessions: activeSessions.length,
+        onlineSessions: activeSessions.filter(s => s.online).length,
+        session: targetSess ? {
+            phone: targetSess.phone,
+            online: Boolean(targetSess.online),
+            connecting: Boolean(targetSess.connecting),
+            pairingBusy: Boolean(targetSess.pairingBusy),
+            sessionReady: Boolean(targetSess.sessionReady),
+            lastError: targetSess.lastError
+        } : null
+    });
+});
+
 app.get('/api/bots', (req, res) => {
     const userId = sanitizeUserId(req.query?.userId);
     const allowedNums = Array.isArray(userBotsMap[userId]) ? userBotsMap[userId] : null;
@@ -1785,6 +1955,8 @@ app.get('/api/bots', (req, res) => {
         bots: filtered.map(s => ({
             phone: s.phone,
             online: Boolean(s.online),
+            connecting: Boolean(s.connecting),
+            pairingBusy: Boolean(s.pairingBusy),
             sessionReady: Boolean(s.sessionReady)
         }))
     });
@@ -1808,6 +1980,29 @@ app.post('/api/command', async (req, res) => {
         if (lower === `${PREFIX}killall` || lower === '-all') {
             hub.pauseAllBotsKeepSessionAlive();
             return res.json({ ok: true, reply: KILL_ALL_BANNER() });
+        }
+
+        if (lower === `${PREFIX}ping` || lower === '+ping') {
+            const activeCnt = [...hub.sessions.values()].filter(s => !s.stopped && s.online).length;
+            return res.json({
+                ok: true,
+                reply: boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
+                    `*${g('ONLINE')}* : ${activeCnt} ${g('SESSIONS')}`,
+                    `*${g('UPTIME')}* : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
+                ])
+            });
+        }
+
+        if (lower === `${PREFIX}status` || lower === '+status') {
+            const total = [...hub.sessions.values()].filter(s => !s.stopped).length;
+            const online = [...hub.sessions.values()].filter(s => !s.stopped && s.online).length;
+            return res.json({
+                ok: true,
+                reply: boxCard(`📊 𝗘𝗡𝗚𝗜𝗡𝗘 𝗦𝗧𝗔𝗧𝗨𝗦 📊`, [
+                    `*${g('ENGINE')}* : ${runtimeState.botPaused ? `⏸️ ${g('PAUSED')}` : `🟢 ${g('ACTIVE')}`}`,
+                    `*${g('BOTS')}*   : ${online}/${total} ${g('ONLINE')}`
+                ])
+            });
         }
 
         if (lower === `${PREFIX}menu` || lower === '+menu') {
