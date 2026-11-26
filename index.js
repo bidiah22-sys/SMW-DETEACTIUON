@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER LOGS + WHATSAPP PAIRING ENGINE     ║
-// ║     !addbot <num> -> Render Logs Code -> Sends Same Code WA  ║
+// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 — STABLE RENDER + WHATSAPP PAIRING ENGINE    ║
+// ║   Single Primary Owner • Wait Notice • Logs -> WA Code       ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -17,7 +17,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
 // =========================================================================
-// 1. CONFIGURATION
+// 1. CONFIGURATION (SINGLE PRIMARY OWNER)
 // =========================================================================
 const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 const PING_MINUTES = 4;
@@ -26,11 +26,12 @@ const MIN_SAFE_DELAY_MS   = 500;
 const DEFAULT_LOOP_MS     = 1200;
 const ANTI_BAN_JITTER_MS  = 120;
 const PAIR_LOGIN_WATCH_MS = 45000;
+const PAIR_WAIT_SECONDS   = 8;
 
 const AUTO_READ_MESSAGES     = true;
 const AUTO_REPLY_COOLDOWN_MS = 600;
 const MAX_WARNS_BEFORE_KICK  = 3;
-const MAX_RECONNECT_ATTEMPTS = 12;
+const MAX_RECONNECT_ATTEMPTS = 8;
 
 const PATH_AUTH      = (phone) => `./sessions/smw_session_${phone}`;
 const PATH_USERS     = './store/users.json';
@@ -42,7 +43,7 @@ const PATH_GC        = './store/gc_settings.json';
 // =========================================================================
 
 // =========================================================================
-// 2. STORAGE & PHONE NORMALIZATION
+// 2. STORAGE & STRICT SINGLE-OWNER CHECK
 // =========================================================================
 try {
     fs.mkdirSync('./store', { recursive: true });
@@ -92,10 +93,8 @@ function normalizeStrictPhone(rawInput) {
 }
 
 const CONFIGURED_BOT_NUMBER = normalizeStrictPhone(BOT_NUMBER);
-const PRIMARY_OWNER_JID = CONFIGURED_BOT_NUMBER ? `${CONFIGURED_BOT_NUMBER}@s.whatsapp.net` : null;
-const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [PRIMARY_OWNER_JID] : [];
+const PRIMARY_OWNER_NUM = CONFIGURED_BOT_NUMBER;
 
-let userData   = readJson(PATH_USERS, { owners: [], subs: {} });
 let timingMap  = readJson(PATH_TIMING, {
     anc1: DEFAULT_LOOP_MS, anc2: DEFAULT_LOOP_MS, anc3: DEFAULT_LOOP_MS,
     anc4: DEFAULT_LOOP_MS, anc5: DEFAULT_LOOP_MS, anc6: DEFAULT_LOOP_MS, anc7: DEFAULT_LOOP_MS
@@ -121,7 +120,6 @@ if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'obje
     runtimeState.autoReplyChats = {};
 }
 
-const saveUsers = () => writeJson(PATH_USERS, userData);
 const saveRuntimeState = () => writeJson(PATH_STATE, runtimeState);
 const saveGcSettings = () => writeJson(PATH_GC, gcSettings);
 
@@ -144,24 +142,20 @@ function setChatAutoReply(sessionPhone, chatJid, enabled) {
     saveRuntimeState();
 }
 
-const isOwner = (j, sessionSelf = null, sessionLid = null) => {
-    if (!j) return false;
-    const cleanJid = String(j).split('@')[0].split(':')[0];
-    if (!cleanJid) return false;
-    if (sessionSelf && String(sessionSelf).split('@')[0].split(':')[0] === cleanJid) return true;
-    if (sessionLid && String(sessionLid).split('@')[0].split(':')[0] === cleanJid) return true;
-    if (CONFIGURED_BOT_NUMBER && cleanJid === CONFIGURED_BOT_NUMBER) return true;
-    return userData.owners.some(o => String(o).split('@')[0].split(':')[0] === cleanJid) ||
-           ADMIN_NUMBERS.some(num => num && num.includes(cleanJid));
-};
+function extractNumFromJid(j) {
+    if (!j) return '';
+    return String(j).split('@')[0].split(':')[0].replace(/\D/g, '');
+}
 
-const isSub = (j, grp) => userData.subs[grp]?.includes(j) || false;
-const grantOwner = j => {
-    if (!userData.owners.includes(j)) {
-        userData.owners.push(j);
-        saveUsers();
-        return true;
-    }
+const isSingleOwner = (senderJid, sessionSelf = null, sessionLid = null, isFromMe = false) => {
+    if (isFromMe) return true;
+    const senderNum = extractNumFromJid(senderJid);
+    if (!senderNum) return false;
+    if (PRIMARY_OWNER_NUM && senderNum === PRIMARY_OWNER_NUM) return true;
+    const selfNum = extractNumFromJid(sessionSelf);
+    const lidNum = extractNumFromJid(sessionLid);
+    if (PRIMARY_OWNER_NUM && selfNum === PRIMARY_OWNER_NUM && senderNum === selfNum) return true;
+    if (PRIMARY_OWNER_NUM && lidNum && senderNum === lidNum && selfNum === PRIMARY_OWNER_NUM) return true;
     return false;
 };
 // =========================================================================
@@ -222,6 +216,12 @@ const boxCard = (header, rows) => {
     ].join('\n');
 };
 
+const pairWaitCard = (cleanNum, waitSec) => boxCard(`⏳ 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗜𝗡 𝗣𝗥𝗢𝗚𝗥𝗘𝗦𝗦 ⏳`, [
+    `*${g('NUMBER')}* : +${cleanNum}`,
+    `*${g('WAIT')}*   : ${g('PLEASE WAIT')} ~${waitSec}s`,
+    `*${g('LOGS')}*   : ${g('GENERATING IN RENDER LOGS')}`
+]);
+
 const pairingCodeCard = (title, cleanNum, formattedCode) => {
     const rawCode = String(formattedCode || '').replace(/[^A-Z0-9]/gi, '');
     return boxCard(title, [
@@ -229,13 +229,13 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
         `*${g('CODE')}*   : \`${formattedCode}\``,
         `*${g('PLAIN')}*  : \`${rawCode}\``,
         `*${g('STEPS')}*  : ${g('WHATSAPP > LINKED DEVICES')}`,
-        `*${g('LOGS')}*   : ${g('ALSO IN RENDER LOGS')}`
+        `*${g('SOURCE')}* : ${g('RENDER LOGS & CHAT')}`
     ]);
 };
 
 const GRAND_START_BANNER = () => boxCard(`⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`, [
     `*${g('STATUS')}*      : 🟢 ${g('LIVE & FULL POWER')}`,
-    `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
+    `*${g('OWNER')}*       : 👑 ${g('SINGLE PRIMARY OWNER')}`,
     `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
     `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`
 ]);
@@ -417,7 +417,7 @@ async function getFastVersion() {
 // =========================================================================
 
 // =========================================================================
-// 5. SESSION & PAIRING WORKER (RENDER LOGS -> WHATSAPP CHAT)
+// 5. SESSION & PAIRING WORKER (SAFE ISOLATED SOCKETS)
 // =========================================================================
 class Session {
     constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false, isPrimary = false) {
@@ -526,11 +526,11 @@ class Session {
     scheduleReconnect(reasonLabel = 'disconnect', customDelayMs = null) {
         if (this.stopped || this.reconnectTimer) return;
         if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            console.log(`[RECONNECT MAX] +${this.phone} (${reasonLabel})`);
+            console.log(`[RECONNECT PAUSED] +${this.phone} (${reasonLabel}) — kept server alive`);
             return;
         }
         this.reconnectAttempts += 1;
-        const backoffMs = customDelayMs ?? Math.min(12000, 1200 * Math.pow(1.4, this.reconnectAttempts - 1));
+        const backoffMs = customDelayMs ?? Math.min(12000, 1500 * Math.pow(1.4, this.reconnectAttempts - 1));
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
             if (!this.stopped) {
@@ -542,16 +542,16 @@ class Session {
 
     async requestRealSocketCode(sock, sourceTag = 'ADDBOT') {
         let lastErr = null;
-        for (let attempt = 1; attempt <= 6; attempt++) {
+        for (let attempt = 1; attempt <= 5; attempt++) {
             try {
-                await delay(1000 * attempt);
+                await delay(1200 * attempt);
                 if (this.stopped || this.socket !== sock) {
-                    throw new Error('Socket replaced or stopped during pairing');
+                    throw new Error('Socket closed or replaced during pairing');
                 }
                 if (!sock || typeof sock.requestPairingCode !== 'function') {
                     throw new Error('requestPairingCode not available on socket');
                 }
-                console.log(`[RENDER ${sourceTag} ATTEMPT ${attempt}] +${this.phone} requesting pairing code...`);
+                console.log(`[RENDER ${sourceTag} ATTEMPT ${attempt}] +${this.phone} requesting code...`);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 8);
                 if (clean.length >= 6) {
@@ -562,13 +562,13 @@ class Session {
                     console.log(`╚══════════════════════════════════════════════════╝\n`);
                     return formatted;
                 }
-                lastErr = new Error('Socket returned empty/short code');
+                lastErr = new Error('Empty or invalid code returned');
             } catch (err) {
                 lastErr = err;
                 console.log(`[RENDER ${sourceTag} ERR ${attempt}] +${this.phone}:`, err?.message || err);
             }
         }
-        throw lastErr || new Error('Failed to fetch real pairing code from WhatsApp socket');
+        throw lastErr || new Error('Failed to generate pairing code');
     }
 
     armPairingWatchdog() {
@@ -579,8 +579,7 @@ class Session {
             if (this.pairingBusy && !this.sessionReady) {
                 this.pairingBusy = false;
                 this.connecting = false;
-                console.log(`[PAIR WATCHDOG] +${this.phone} reconnecting socket`);
-                this.scheduleReconnect('pairing_watchdog', 900);
+                console.log(`[PAIR WATCHDOG] +${this.phone} safely resetting pairing state`);
             }
         }, PAIR_LOGIN_WATCH_MS);
     }
@@ -647,7 +646,11 @@ class Session {
                 }
 
                 this.pairingBusy = false;
-                this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired' : 'close', 700);
+                if (!this.isPrimary && !this.sessionReady) {
+                    console.log(`[UNPAIRED SESSION IDLE] +${this.phone} waiting for manual relink or !addbot`);
+                    return;
+                }
+                this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired' : 'close', 1200);
             }
         });
 
@@ -659,7 +662,7 @@ class Session {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
 
-        console.log(`[RENDER ADDBOT SETUP] +${this.phone} -> running fresh socket & printing code in Render logs...`);
+        console.log(`[RENDER ADDBOT SETUP] +${this.phone} -> generating code in Render logs first...`);
 
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
         if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
@@ -767,20 +770,18 @@ class Session {
                     : (raw.key.participant || raw.participant || chat);
                 const cmd = body.toLowerCase().trim();
 
-                const isDM = !isGroup;
                 const isFromMe = Boolean(raw.key.fromMe);
-                const isOwn = isFromMe || isOwner(sender, this.self, this.selfLid);
-                const allowed = isFromMe || isOwn || isSub(sender, chat);
+                const allowed = isSingleOwner(sender, this.self, this.selfLid, isFromMe);
 
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
-                    console.log(`[RENDER CMD] ${cmd} from ${sender} in ${chat}`);
+                    console.log(`[RENDER CMD] ${cmd} from owner ${sender} in ${chat}`);
                     this.hub.resumeAllBots();
                     await this.sendInstant(chat, GRAND_START_BANNER());
                     continue;
                 }
 
                 if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
-                    console.log(`[RENDER CMD] ${cmd} from ${sender} in ${chat}`);
+                    console.log(`[RENDER CMD] ${cmd} from owner ${sender} in ${chat}`);
                     this.hub.pauseAllBotsKeepSessionAlive();
                     await this.sendInstant(chat, KILL_ALL_BANNER());
                     continue;
@@ -792,7 +793,7 @@ class Session {
                     this.socket?.readMessages([raw.key]).catch(() => {});
                 }
 
-                if (isGroup && !isOwn && gcSettings.antiLink?.[chat] && hasLink(body)) {
+                if (isGroup && !allowed && gcSettings.antiLink?.[chat] && hasLink(body)) {
                     try {
                         await this.socket.sendMessage(chat, { delete: raw.key });
                         await this.sendInstant(chat, boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [
@@ -846,16 +847,6 @@ class Session {
                         continue;
                     }
 
-                    if (isDM && (cmd === `${PREFIX}admin` || cmd === '+admin')) {
-                        if (!userData.owners.length) {
-                            grantOwner(sender);
-                            await this.sendInstant(chat, boxCard(`👑 𝗢𝗪𝗡𝗘𝗥 𝗦𝗘𝗧 👑`, [`*${g('STATUS')}* : ${g('you are now the owner')}`]));
-                        } else if (isOwn) {
-                            await this.sendInstant(chat, boxCard(`⚠️ 𝗢𝗪𝗡𝗘𝗥 𝗖𝗛𝗘𝗖𝗞 ⚠️`, [`*${g('STATUS')}* : ${g('you already own this bot')}`]));
-                        }
-                        continue;
-                    }
-
                     if (cmd.startsWith(`${PREFIX}unpair `)) {
                         const cleanNum = normalizeStrictPhone(body.slice(PREFIX.length + 7).trim());
                         if (!cleanNum) {
@@ -878,6 +869,9 @@ class Session {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +9647882064284`]));
                             continue;
                         }
+
+                        await this.sendInstant(chat, pairWaitCard(cleanNum, PAIR_WAIT_SECONDS));
+
                         try {
                             const realCode = await this.hub.addNumberInChat(cleanNum, chat);
                             await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, realCode));
@@ -1348,7 +1342,7 @@ class Hub {
             const session = new Session(id, num, this, null, false, isPrimary, isPrimary);
             this.sessions.set(id, session);
             await session.init();
-            await delay(500);
+            await delay(600);
         }
     }
 }
@@ -1371,11 +1365,10 @@ function startKeepAlive() {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER + WHATSAPP ENGINE ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — STABLE RENDER ENGINE ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Primary Bot       : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Gemini AI         : ENABLED (${GEMINI_MODELS.join(', ')})
-  Pairing Flow      : Render Logs -> WhatsApp Chat
+  Primary Owner     : ${PRIMARY_OWNER_NUM ? `+${PRIMARY_OWNER_NUM}` : 'NOT SET'}
+  Pairing Flow      : Wait Notice -> Render Logs -> WA Chat
   Initial State     : STANDBY (Send !start)
   Port              : ${PORT}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
