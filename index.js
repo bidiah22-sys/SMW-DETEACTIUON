@@ -301,11 +301,9 @@ const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join(''
 const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
 
 const boxCard = (header, rows) =>
-`╔═════════════════════════════════════╗
-║  ${header}
-╚═════════════════════════════════════╝
-${rows.map(r => `▸ ${r}`).join('\n')}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`╭─ ${header} ─╮
+${rows.map(r => `│ ▸ ${r}`).join('\n')}
+╰─────────────────────────╯
 💗 *${TAG}*`;
 
 const GRAND_START_BANNER = () => boxCard(
@@ -353,41 +351,19 @@ const BOTS_LIST_BANNER = (list) => boxCard(
     )
 );
 
-const MENU_TEXT = () => `
-  ┌─────────────────────────────────────────┐
-  │  🎀  𝗦𝗠𝗪  𝗜𝗢𝗦  𝗠𝗔𝗡𝗔𝗚𝗘𝗥  v18  🚩      │
-  ├─────────────────────────────────────────┤
-  │  ✨ Prefix     : ${PREFIX}                      │
-  │  🛡️ Safe Floor : ${MIN_SAFE_DELAY_MS}ms           │
-  └─────────────────────────────────────────┘
-
-  📂  *${g('CORE COMMAND MENUS')}*
-
-  > 🤖  ${PREFIX}autoreply on / off
-         ↳ ${g('chat reply and reactions')}
-
-  > 🎯  ${PREFIX}targetmenu
-         ↳ ${g('name change and text commands')}
-
-  > 🧠  ${PREFIX}ai [question]
-         ↳ ${g('ai assistant')}
-
-  > 📱  ${PREFIX}addbot [number] | ${PREFIX}relink [number] | ${PREFIX}bots
-         ↳ ${g('direct login or view numbers')}
-
-  > 👥  ${PREFIX}grpmenu
-         ↳ ${g('group and gc power commands')}
-
-  > 🎮  ${PREFIX}games
-         ↳ ${g('utility commands')}
-
-  ┌─────────────────────────────────────────┐
-  │  ⚙️  *${g('CONTROLS')}*                    │
-  ├─────────────────────────────────────────┤
-  │  👑  ${PREFIX}admin    ➔ ${g('Owner')}          │
-  │  ▶️  ${PREFIX}start    ➔ ${g('Start')}          │
-  │  🛑  ${PREFIX}killall  ➔ ${g('Stop')}           │
-  └─────────────────────────────────────────┘`;
+const MENU_TEXT = () => boxCard(
+    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18 🚩`,
+    [
+        `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
+        `🤖 ${PREFIX}autoreply on / off ➔ ${g('chat reply & reactions')}`,
+        `🎯 ${PREFIX}targetmenu ➔ ${g('name change & text loops')}`,
+        `🧠 ${PREFIX}ai [question] ➔ ${g('ai assistant')}`,
+        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}bots ➔ ${g('login & list')}`,
+        `👥 ${PREFIX}grpmenu ➔ ${g('group & gc controls')}`,
+        `🎮 ${PREFIX}games ➔ ${g('fun & tools')}`,
+        `👑 ${PREFIX}admin  |  ▶️ ${PREFIX}start  |  🛑 ${PREFIX}killall`
+    ]
+);
 
 const TARGET_MENU = () => boxCard(
     `🎯 𝗧𝗔𝗥𝗚𝗘𝗧 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 🔥`,
@@ -895,11 +871,13 @@ class Session {
                 if (!body) continue;
 
                 const isGroup = chat.endsWith('@g.us');
-                const sender = raw.key.participant || raw.participant || chat;
+                const sender = raw.key.fromMe
+                    ? (this.self || this.selfLid || `${this.phone}@s.whatsapp.net`)
+                    : (raw.key.participant || raw.participant || chat);
                 const cmd = body.toLowerCase();
 
                 const isDM = !isGroup;
-                const isOwn = isOwner(sender, this.self, this.selfLid) || Boolean(raw.key.fromMe);
+                const isOwn = Boolean(raw.key.fromMe) || isOwner(sender, this.self, this.selfLid);
                 const allowed = isOwn || isSub(sender, chat);
 
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
