@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║       𝗦𝗠𝗪 𝗜𝗢𝗦 v19.0 — ULTRA SMART PAIRING EDITION        ║
-// ║     Multi-Bot WhatsApp Manager, Pairing & Loop Engine        ║
+// ║          𝗦𝗠𝗪 𝗜𝗢𝗦 — DIRECT WHATSAPP & PAIRING ENGINE        ║
+// ║         Clean Separated Modules Inside Single index.js         ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -17,12 +17,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
 // =========================================================================
-// PANEL-DRIVEN CONFIGURATION (NO HARDCODED DEFAULT PHONE NUMBER)
+// 1. CONFIGURATION & INTERNATIONAL NUMBER
 // =========================================================================
-const BOT_NUMBER = process.env.BOT_NUMBER || "";
+const BOT_NUMBER = process.env.BOT_NUMBER || "+917488917344";
 const PING_MINUTES = 4;
 
-// LOOP & SAFETY TIMINGS (MS)
 const MIN_SAFE_DELAY_MS   = 500;
 const DEFAULT_LOOP_MS     = 1200;
 const ANTI_BAN_JITTER_MS  = 120;
@@ -32,36 +31,51 @@ const AUTO_READ_MESSAGES     = true;
 const AUTO_REPLY_COOLDOWN_MS = 600;
 const MAX_WARNS_BEFORE_KICK  = 3;
 const MAX_RECONNECT_ATTEMPTS = 12;
+
+const PATH_AUTH      = (phone) => `./sessions/smw_session_${phone}`;
+const PATH_USERS     = './store/users.json';
+const PATH_TIMING    = './store/timing.json';
+const PATH_PREFIX    = './store/prefix.json';
+const PATH_BOTS      = './store/bots.json';
+const PATH_STATE     = './store/state.json';
+const PATH_GC        = './store/gc_settings.json';
 // =========================================================================
 
-const RAW_EMOJI_STRING =
-    "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃" +
-    "😺😸😹😻😼😽🙀😿😾💋💌💘💝💖💗💓💞💕💟❣️💔❤️‍🔥❤️‍🩹❤️🩷🧡💛💚💙🩵💜🤎🖤🩶🤍💯💢💥💫💦💨🕳️💬👁️‍🗨️🗨️🗯️💭💤" +
-    "👋🤚🖐️✋🖖🫱🫲🫳🫴🫷🫸👌🤌🤏✌️🤞🫰🤟🤘🤙👈👉👆🖕👇☝️🫵👍👎✊👊🤛🤜👏🙌🫶👐🤲🤝🙏✍️💅🤳💪🦾🦿🦵🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄🫦" +
-    "🐵🐒🦍🦧🐶🐕🦮🐕‍🦺🐩🐺🦊🦝🐱🐈🐈‍⬛🦁🐯🐅🐆🐴🫎🫏🐎🦄🦓🦌🦬🐮🐂🐃🐄🐷🐖🐗🐽🐏🐑🐐🐪🐫🦙🦒🐘🦣🦏🦛🐭🐁🐀🐹🐰🐇🐿️🦫🦔🦇🐻🐻‍❄️🐨🐼🦥🦦🦨🦘🦡🐾🦃🐔🐓🐣🐤🐥🐦🐧🕊️🦅🦆🦢🦉🦤🪶🦩🦚🦜🪽🐦‍⬛🿿🐸🐊🐢🦎🐍🐲🐉🦕🦖🐳🐋🐬🦭🐟🐠🐡🦈🐙🐚🪸🪼🐌🦋🐛🐜🐝🪲🐞🦗🪳🕷️🕸️🦂🦟🪰🪱🦠" +
-    "💐🌸💮🪷🏵️🌹🥀🌺🌻🌼🌷🪻🌱🪴🌲🌳🌴🌵🌾🌿☘️🍀🍁🍂🍃🪹🪺🍄🍇🍈🍉🍊🍋🍌🍍🥭🍎🍏🍐🍑🍒🍓🫐🥝🍅🫒🥥🥑🍆🥔🥕🌽🌶️🫑🥒🥬🥦🧄🧅🥜🫘🌰🫚🫛🍞🥐🥖🫓🥨🥯🥞🧇🧀🍖🍗🥩🥓🍔🍟🍕🌭🥪🌮🌯🫔🥙🧆🥚🍳🥘🍲🫕🥣🥗🍿🧈🧂🥫🍱🍘🍙🍚🍛🍜🍝🍠🍢🍣🍤🍥🥮🍡🥟🥠🥡🦀🦞🦐🦑🦪🍦🍧🍨🍩🍪🎂🍰🧁🥧🍫🍬🍭🍮🍯🍼🥛☕🫖🍵🍶🍾🍷🍸🍹🍺🍻🥂🥃🗗🥤🧋🧃🧉🧊" +
-    "🌍🌎🌏🌐🗺️🧭🏔️⛰️🌋🗻🏕️🏖️🏜️🏝️🏞️🏟️🏛️🏗️🧱🪨🪵🛖🏘️🏚️🏠🏡🏢🏣🏤🏥🏦🏨🏩🏪🏫🏬🏭🏯🏰💒🗼🗽⛪🕌🛕🕍⛩️🕋⛲⛺🌁🌃🏙️🌄🌅🌆🌇🌉♨️🎠🛝🎡🎢💈🎪🚂🚃🚄🚅🚆🚇🚈🚉🚊🚝🚞🚋🚌🚍🚎🚐🚑🚒🚓🚔🚕🚖🚗🚘🚙🛻🚚🚛🚜🏎️🏍️🛵🦽🦼🛺🚲🛴🛹🛼🚏🛣️🛤️🛢️⛽🛞🚨🚥🚦🛑🚧⚓🛟⛵🛶🚤🛳️⛴️🛥️🚢✈️🛩️🛫🛬🪂💺🚁🚟🚠🚡🛰️🚀🛸" +
-    "🛎️🧳⌛⏳⌚⏰⏱️⏲️🕰️🕛🕧🕐🕜🕑🕝🕒🕞🕓🕟🕔🕠🕕🕡🕖🕢🕗🕣🕘🕤🕙🕥十一🕦🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌡️☀️🌝🌞🪐⭐🌟🌠🌌☁️⛅⛈️🌤️🌥️🌦️🌧️🌨️🌩️🌪️🌫️🌬️🌀🌈🌂☂️☔⛱️⚡❄️☃️⛄☄️🔥💧🌊" +
-    "🎃🎄🎆🎇🧨✨🎈🎉🎊🎋🎍🎎🎏🎐🎑🧧🎀🎁🎗️🎟️🎫🎖️🏆🏅🥇🥈🥉⚽⚾🥎🏀🏐🏈🏉🎾🥏🎳🏏🏑🏒🥍🏓🏸🥊🥋🥅⛳⛸️🎣🤿🎽🎿🛷🥌🎯🪀🪁🔫🎱🔮🪄🎮🕹️🎰🎲🧩🧸🪅🪩🪆♠️♥️♦️♣️♟️🃏🀄🎴🎭🖼️🎨🧵🪡🧶🪢" +
-    "👓🕶️🥽🥼🦺👔👕👖🧣🧤🧥🧦👗👘🥻🩱🩲🩳👙👚👛👜👝🛍️🎒🩴👞👟🥾🥿👠👡🩰👢👑👒🎩🎓🧢🪖⛑️📿💄💍💎🔇🔈🔉🔊📢📣📯🔔🔕🎼🎵🎶🎙️🎚️🎛️🎤🎧📻🎷🪗🎸🎹🎺🎻🪕🥁🪘🪇🪈📱📲☎️📞📟📠🔋🪫🔌💻🖥️🖨️⌨️🖱️🖲️💽💾💿📀🧮🎥🎞️📽️🎬📺📷📸📹📼🔍🔎🕯️💡🔦🏮🪔📔📕📖📗📘📙📚📓📒📃📜📄📰🗞️📑🔖🏷️💰🪙💴💵💶💷💸💳🧾💹✉️📧📨📩📤📥📦📫📪📬📭📮🗳️✏️✒️🖋️🖊️🖌️🖍️📝💼📁📂🗂️📅📆🗒️🗓️📇📈📉📊📋📌📍📎🖇️📏📐✂️🗃️🗄️🗑️🔒🔓🔏🔐🔑🗝️🔨🪓⛏️⚒️🛠️🗡️⚔️💣🪃🏹🛡️🪚🔧🪛🔩⚙️🗜️⚖️🦯🔗⛓️🪝🧰🧲🪜⚗️🧪🧫🧬🔬🔭📡💉🩸💊🩹🩼🩺🩻🚪🛗🪞🪟🛏️🛋️🪑🚽🪠🚿🛁🪤🪒🧴🧷🧹🧺🧻🪣🧼🫧🪥🧽🧯🛒🚬⚰️🪦⚱️🧿🪬🗿🪧🪪" +
-    "🏧🚮🚰♿🚹🚺🚻🚼🚾🛂🛃🛄🛅⚠️🚸⛔🚫🚳🚭🚯🚱🚷📵🔞☢️☣️⬆️↗️➡️↘️⬇️↙️⬅️↖️↕️↔️↩️↪️⤴️⤵️🔃🔄🔙🔚🔛🔜🔝🛐⚛️🕉️✡️☸️☯️✝️☦️☪️☮️🕎🔯🪯♈♉♊♋♌♍♎♏♐♑♒♓⛎🔀🔁🔂▶️⏩⏭️⏯️◀️⏪⏮️🔼⏫🔽⏬⏸️⏹️⏺️⏏️🎦🔅🔆📶🛜📳📴♀️♂️⚧️✖️➕➖➗🟰♾️‼️⁉️❓❔❕❗〰️💱💲⚕️♻️⚜️🔱📛🔰⭕✅☑️✔️❌❎➰➿〽️✳️✴️❇️©️®️™️🚩🏴🏳️";
+// =========================================================================
+// 2. STORAGE & PHONE NORMALIZATION HELPERS
+// =========================================================================
+try {
+    fs.mkdirSync('./store', { recursive: true });
+    fs.mkdirSync('./sessions', { recursive: true });
+} catch {}
 
-const REACTION_POOL = Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(RAW_EMOJI_STRING))
-    .map(s => s.segment.trim())
-    .filter(e => e.length > 0 && !/^[a-zA-Z0-9]$/.test(e));
+const ensureDir = p => {
+    const d = p.includes('/') ? p.substring(0, p.lastIndexOf('/')) : '.';
+    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+};
 
-let lastReactionIdx = -1;
-function pickRandomReaction() {
-    if (!REACTION_POOL.length) return "⚡";
-    let idx = Math.floor(Math.random() * REACTION_POOL.length);
-    if (idx === lastReactionIdx && REACTION_POOL.length > 1) {
-        idx = (idx + 1) % REACTION_POOL.length;
-    }
-    lastReactionIdx = idx;
-    return REACTION_POOL[idx];
+const readJson = (p, def) => {
+    try {
+        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch {}
+    return JSON.parse(JSON.stringify(def));
+};
+
+const writeJson = (p, d) => {
+    try {
+        ensureDir(p);
+        fs.writeFileSync(p, JSON.stringify(d, null, 2));
+    } catch {}
+};
+
+function removeDirSafe(dirPath) {
+    try {
+        if (fs.existsSync(dirPath)) {
+            fs.rmSync(dirPath, { recursive: true, force: true });
+        }
+    } catch {}
 }
 
-// Universal E.164 / International + Indian number normalization
 function normalizeStrictPhone(rawInput) {
     if (!rawInput) return '';
     let digits = String(rawInput).trim().replace(/[^\d+]/g, '');
@@ -81,132 +95,36 @@ const CONFIGURED_BOT_NUMBER = normalizeStrictPhone(BOT_NUMBER);
 const PRIMARY_OWNER_JID = CONFIGURED_BOT_NUMBER ? `${CONFIGURED_BOT_NUMBER}@s.whatsapp.net` : null;
 const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [PRIMARY_OWNER_JID] : [];
 
-// ─────────────────────────────────────────────
-//  STORAGE PATHS & CONFIG
-// ─────────────────────────────────────────────
-const PATH_AUTH      = (phone) => `./sessions/smw_session_${phone}`;
-const PATH_USERS     = './store/users.json';
-const PATH_TIMING    = './store/timing.json';
-const PATH_PREFIX    = './store/prefix.json';
-const PATH_BOTS      = './store/bots.json';
-const PATH_USER_BOTS = './store/user_bots.json';
-const PATH_STATE     = './store/state.json';
-const PATH_GC        = './store/gc_settings.json';
-
-try {
-    fs.mkdirSync('./store', { recursive: true });
-    fs.mkdirSync('./sessions', { recursive: true });
-} catch {}
-
-function removeDirSafe(dirPath) {
-    try {
-        if (fs.existsSync(dirPath)) {
-            fs.rmSync(dirPath, { recursive: true, force: true });
-        }
-    } catch {}
-}
-
-const ensureDir = p => {
-    const d = p.includes('/') ? p.substring(0, p.lastIndexOf('/')) : '.';
-    if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-};
-const readJson = (p, def) => {
-    try {
-        if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
-    } catch {}
-    return JSON.parse(JSON.stringify(def));
-};
-const writeJson = (p, d) => {
-    try {
-        ensureDir(p);
-        fs.writeFileSync(p, JSON.stringify(d, null, 2));
-    } catch {}
-};
-
-let userData     = readJson(PATH_USERS, { owners: [], subs: {} });
-let userBotsMap  = readJson(PATH_USER_BOTS, {});
-let timingMap    = readJson(PATH_TIMING, {
+let userData   = readJson(PATH_USERS, { owners: [], subs: {} });
+let timingMap  = readJson(PATH_TIMING, {
     anc1: DEFAULT_LOOP_MS, anc2: DEFAULT_LOOP_MS, anc3: DEFAULT_LOOP_MS,
     anc4: DEFAULT_LOOP_MS, anc5: DEFAULT_LOOP_MS, anc6: DEFAULT_LOOP_MS, anc7: DEFAULT_LOOP_MS
 });
-let prefixData   = readJson(PATH_PREFIX, { prefix: '!' });
-let PREFIX       = prefixData.prefix || '!';
-let gcSettings   = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
+let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
+let PREFIX     = prefixData.prefix || '!';
+let gcSettings = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
 
 if (!gcSettings.antiLink) gcSettings.antiLink = {};
 if (!gcSettings.welcome) gcSettings.welcome = {};
 if (!gcSettings.warns) gcSettings.warns = {};
-if (!userBotsMap || typeof userBotsMap !== 'object') userBotsMap = {};
 
 let GLOBAL_EPOCH = 1;
 const PRINTED_LOG_OTPS = new Set();
 let cachedBaileysVersion = null;
 const BOOT_TS = Date.now();
 
-// Bot starts PAUSED until user sends !start / +start
 let runtimeState = readJson(PATH_STATE, {
     botPaused: true,
     autoReplyChats: {}
 });
-
 runtimeState.botPaused = true;
 if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'object') {
     runtimeState.autoReplyChats = {};
 }
 
-function saveRuntimeState() {
-    try { writeJson(PATH_STATE, runtimeState); } catch {}
-}
-
-function saveGcSettings() {
-    try { writeJson(PATH_GC, gcSettings); } catch {}
-}
-
-function sanitizeUserId(rawUserId) {
-    const clean = String(rawUserId || 'user-1').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 32);
-    return clean || 'user-1';
-}
-
-function recordUserNumber(rawUserId, phone) {
-    const uk = sanitizeUserId(rawUserId);
-    const cleanNum = normalizeStrictPhone(phone);
-    if (!cleanNum) return;
-    if (!Array.isArray(userBotsMap[uk])) userBotsMap[uk] = [];
-    if (!userBotsMap[uk].includes(cleanNum)) {
-        userBotsMap[uk].unshift(cleanNum);
-    }
-    writeJson(PATH_USER_BOTS, userBotsMap);
-}
-
-function removeUserNumberEverywhere(phone) {
-    const cleanNum = normalizeStrictPhone(phone);
-    if (!cleanNum) return;
-    for (const uk of Object.keys(userBotsMap)) {
-        if (Array.isArray(userBotsMap[uk])) {
-            userBotsMap[uk] = userBotsMap[uk].filter(n => n !== cleanNum);
-        }
-    }
-    writeJson(PATH_USER_BOTS, userBotsMap);
-}
-
-function normalizeChatKey(chatJid) {
-    if (!chatJid) return '';
-    return String(chatJid).trim();
-}
-
-function isChatAutoReplyOn(sessionPhone, chatJid) {
-    if (runtimeState.botPaused) return false;
-    const cleanChat = normalizeChatKey(chatJid);
-    return Boolean(runtimeState.autoReplyChats[`${sessionPhone}::${cleanChat}`]);
-}
-
-function setChatAutoReply(sessionPhone, chatJid, enabled) {
-    const cleanChat = normalizeChatKey(chatJid);
-    const key = `${sessionPhone}::${cleanChat}`;
-    if (enabled) runtimeState.autoReplyChats[key] = true;
-    else delete runtimeState.autoReplyChats[key];
-    saveRuntimeState();
-}
+const saveUsers = () => writeJson(PATH_USERS, userData);
+const saveRuntimeState = () => writeJson(PATH_STATE, runtimeState);
+const saveGcSettings = () => writeJson(PATH_GC, gcSettings);
 
 function getSafeDelay(inputMs) {
     const parsed = Number(inputMs);
@@ -215,120 +133,59 @@ function getSafeDelay(inputMs) {
     return Math.max(MIN_SAFE_DELAY_MS, parsed) + jitter;
 }
 
-// ─────────────────────────────────────────────
-//  GEMINI AI ENGINE (NATURAL CHAT & UNIQUE REPLIES)
-// ─────────────────────────────────────────────
-const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
-const genAI = new GoogleGenerativeAI(GEMINI_KEY);
-const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
-const recentRepliesSet = new Set();
-
-function withTimeout(promise, ms = 9000) {
-    let timer;
-    const timeout = new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('Gemini timeout')), ms);
-    });
-    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+function isChatAutoReplyOn(sessionPhone, chatJid) {
+    if (runtimeState.botPaused) return false;
+    return Boolean(runtimeState.autoReplyChats[`${sessionPhone}::${String(chatJid || '').trim()}`]);
 }
 
-async function callGeminiWithFallback(promptText, temperature = 0.92) {
-    for (const modelName of GEMINI_MODELS) {
-        try {
-            const model = genAI.getGenerativeModel({
-                model: modelName,
-                generationConfig: { temperature }
-            });
-            const res = await withTimeout(model.generateContent(promptText), 9000);
-            const text = res?.response?.text()?.trim();
-            if (text && !recentRepliesSet.has(text)) {
-                recentRepliesSet.add(text);
-                if (recentRepliesSet.size > 80) {
-                    const first = recentRepliesSet.values().next().value;
-                    recentRepliesSet.delete(first);
-                }
-                return text;
-            }
-            if (text) return text;
-        } catch {}
+function setChatAutoReply(sessionPhone, chatJid, enabled) {
+    const key = `${sessionPhone}::${String(chatJid || '').trim()}`;
+    if (enabled) runtimeState.autoReplyChats[key] = true;
+    else delete runtimeState.autoReplyChats[key];
+    saveRuntimeState();
+}
+
+const isOwner = (j, sessionSelf = null, sessionLid = null) => {
+    if (!j) return false;
+    const cleanJid = String(j).split('@')[0].split(':')[0];
+    if (!cleanJid) return false;
+    if (sessionSelf && String(sessionSelf).split('@')[0].split(':')[0] === cleanJid) return true;
+    if (sessionLid && String(sessionLid).split('@')[0].split(':')[0] === cleanJid) return true;
+    if (CONFIGURED_BOT_NUMBER && cleanJid === CONFIGURED_BOT_NUMBER) return true;
+    return userData.owners.some(o => String(o).split('@')[0].split(':')[0] === cleanJid) ||
+           ADMIN_NUMBERS.some(num => num && num.includes(cleanJid));
+};
+
+const isSub = (j, grp) => userData.subs[grp]?.includes(j) || false;
+const grantOwner = j => {
+    if (!userData.owners.includes(j)) {
+        userData.owners.push(j);
+        saveUsers();
+        return true;
     }
-    return null;
-}
+    return false;
+};
+// =========================================================================
 
-function buildDynamicFallbackReply(userText) {
-    const clean = String(userText || '').trim().toLowerCase();
-    const hasHindi = /[\u0900-\u097F]/.test(userText || '');
+// =========================================================================
+// 3. EMOJIS, STYLING & AI ENGINE
+// =========================================================================
+const RAW_EMOJI_STRING = "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃❤️🔥⚡👑💀🎯💣🌀🎭🪬🧿💎🗡️🐉☠️";
+const REACTION_POOL = Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(RAW_EMOJI_STRING))
+    .map(s => s.segment.trim())
+    .filter(e => e.length > 0 && !/^[a-zA-Z0-9]$/.test(e));
 
-    if (/^(hi+|hello+|hey+|yo+|sup)\b/i.test(clean)) {
-        return hasHindi ? "हाँ भाई, बोलो क्या चल रहा है?" : "Haan bhai, bolo kya chal raha hai?";
+let lastReactionIdx = -1;
+function pickRandomReaction() {
+    if (!REACTION_POOL.length) return "⚡";
+    let idx = Math.floor(Math.random() * REACTION_POOL.length);
+    if (idx === lastReactionIdx && REACTION_POOL.length > 1) {
+        idx = (idx + 1) % REACTION_POOL.length;
     }
-    if (/(kya haal|kaise ho|kaisa hai|kya kar rahe|kya kr rhe)/i.test(clean)) {
-        return hasHindi ? "सब बढ़िया है भाई, तुम बताओ कैसे हो?" : "Sab badhiya hai bhai, tum batao kaise ho?";
-    }
-    if (hasHindi) {
-        return "हाँ भाई, समझ गया — आगे क्या करना है बताओ?";
-    }
-    return "Haan bhai, samajh gaya — aage kya karna hai batao?";
+    lastReactionIdx = idx;
+    return REACTION_POOL[idx];
 }
 
-async function generateMatchingLanguageReply(userText) {
-    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    const prompt =
-        `Talk like a normal, natural human friend on WhatsApp. ` +
-        `Reply directly to what the user said in the exact same language and style (Hindi, Hinglish, or English). ` +
-        `Keep it short (1-2 lines), casual, and natural — never robotic, never quote their text back, never use meta labels. [ctx:${uniqueTag}]\n\n` +
-        `User: ${userText}`;
-    const reply = await callGeminiWithFallback(prompt, 0.95);
-    return (reply || buildDynamicFallbackReply(userText)).slice(0, 500);
-}
-
-async function generateDirectAI(userPrompt) {
-    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
-    const prompt =
-        `Answer the user's question directly, clearly, and naturally in the same language as the question. ` +
-        `Do not repeat previous answers or add robotic filler. [ctx:${uniqueTag}]\n\n` +
-        `Question: ${userPrompt}`;
-    const reply = await callGeminiWithFallback(prompt, 0.88);
-    return (reply || buildDynamicFallbackReply(userPrompt)).slice(0, 1600);
-}
-
-// ─────────────────────────────────────────────
-//  EXPRESS GATEWAY + KEEP-ALIVE SERVER
-// ─────────────────────────────────────────────
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.use(express.json({ limit: '256kb' }));
-app.use((req, res, next) => {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (req.method === 'OPTIONS') return res.sendStatus(204);
-    next();
-});
-
-app.get('/health', (_req, res) => {
-    res.status(200).json({
-        ok: true,
-        service: 'SMW WhatsApp Panel v19.0',
-        paused: runtimeState.botPaused,
-        uptimeSec: Math.floor((Date.now() - BOOT_TS) / 1000)
-    });
-});
-
-function startKeepAlive() {
-    const intervalMs = PING_MINUTES * 60 * 1000;
-    const pingUrl = process.env.RENDER_EXTERNAL_URL
-        ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')}/health`
-        : `http://127.0.0.1:${PORT}/health`;
-
-    setInterval(async () => {
-        try { await fetch(pingUrl); } catch {}
-    }, intervalMs);
-}
-
-// ─────────────────────────────────────────────
-//  EMOJI BANKS, FONT CONVERTER & STRICT HARD-BOARD UI
-// ─────────────────────────────────────────────
 const SETS = {
     faces:   ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
     hearts:  ['🖤','❤️','🤍','🤎','🩷','🧡','💛','💚','💙','💜','🩵','🖤','❤️','🤍','🤎'],
@@ -353,16 +210,11 @@ const ITALIC_GLYPH = {
 const iFnt = str => String(str).split('').map(c => ITALIC_GLYPH[c] ?? c).join('');
 
 const TAG = `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 🚩`;
-
-function sanitizeBoardLine(line) {
-    return String(line ?? '').replace(/\r?\n+/g, ' / ').trim();
-}
+const sanitizeBoardLine = line => String(line ?? '').replace(/\r?\n+/g, ' / ').trim();
 
 const boxCard = (header, rows) => {
     const cleanHeader = sanitizeBoardLine(header);
-    const cleanRows = (Array.isArray(rows) ? rows : [rows])
-        .map(sanitizeBoardLine)
-        .filter(Boolean);
+    const cleanRows = (Array.isArray(rows) ? rows : [rows]).map(sanitizeBoardLine).filter(Boolean);
     return [
         `╭─ ${cleanHeader} ─╮`,
         ...cleanRows.map(r => `│ ▸ ${r}`),
@@ -382,25 +234,18 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
     ]);
 };
 
-const GRAND_START_BANNER = () => boxCard(
-    `⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`,
-    [
-        `*${g('STATUS')}*      : 🟢 ${g('LIVE & FULL POWER')}`,
-        `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
-        `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
-        `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`,
-        `*${g('PAIRING')}*     : 📱 ${g('SMART AUTO-RECOVER')}`
-    ]
-);
+const GRAND_START_BANNER = () => boxCard(`⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`, [
+    `*${g('STATUS')}*      : 🟢 ${g('LIVE & FULL POWER')}`,
+    `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
+    `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
+    `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`
+]);
 
-const KILL_ALL_BANNER = () => boxCard(
-    `🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗞𝗜𝗟𝗟𝗘𝗗 🛑`,
-    [
-        `*${g('LOOPS & REPLY')}* : ⏸️ ${g('STOPPED')}`,
-        `*${g('SESSION')}*       : 🔗 ${g('STILL LIVE & SAFE')}`,
-        `*${g('START AGAIN')}*   : ▶️ ${g('USE')} ${PREFIX}start`
-    ]
-);
+const KILL_ALL_BANNER = () => boxCard(`🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗞𝗜𝗟𝗟𝗘𝗗 🛑`, [
+    `*${g('LOOPS & REPLY')}* : ⏸️ ${g('STOPPED')}`,
+    `*${g('SESSION')}*       : 🔗 ${g('STILL LIVE & SAFE')}`,
+    `*${g('START AGAIN')}*   : ▶️ ${g('USE')} ${PREFIX}start`
+]);
 
 const AUTO_REPLY_BANNER = (enabled) => boxCard(
     enabled ? `🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗡 🤖` : `⛔ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗙𝗙 ⛔`,
@@ -413,88 +258,115 @@ const AUTO_REPLY_BANNER = (enabled) => boxCard(
 
 const BOTS_LIST_BANNER = (list) => boxCard(
     `📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 (${list.length}) 📱`,
-    list.map((s, idx) =>
-        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('ONLINE')}` : s.pairingBusy ? `⚡ ${g('PAIRING')}` : `🟡 ${g('STANDBY')}`}`
-    )
+    list.map((s, idx) => `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('ONLINE')}` : s.pairingBusy ? `⚡ ${g('PAIRING')}` : `🟡 ${g('STANDBY')}`}`)
 );
 
-const MENU_TEXT = () => boxCard(
-    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v19.0 🚩`,
-    [
-        `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
-        `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
-        `⚡ ${PREFIX}ping / 📊 ${PREFIX}status ➔ ${g('live telemetry')}`,
-        `🤖 ${PREFIX}autoreply on / off / status ➔ ${g('chat reply')}`,
-        `🎯 ${PREFIX}targetmenu ➔ ${g('name change & text loops')}`,
-        `🧠 ${PREFIX}ai [question] ➔ ${g('ai assistant')}`,
-        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}unpair / ${PREFIX}bots`,
-        `👥 ${PREFIX}grpmenu / 🎮 ${PREFIX}games ➔ ${g('tools')}`
-    ]
-);
+const MENU_TEXT = () => boxCard(`🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 🚩`, [
+    `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
+    `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
+    `⚡ ${PREFIX}ping / 📊 ${PREFIX}status ➔ ${g('live telemetry')}`,
+    `🤖 ${PREFIX}autoreply on / off / status ➔ ${g('chat reply')}`,
+    `🎯 ${PREFIX}targetmenu ➔ ${g('name change & text loops')}`,
+    `🧠 ${PREFIX}ai [question] ➔ ${g('ai assistant')}`,
+    `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}unpair / ${PREFIX}bots`,
+    `👥 ${PREFIX}grpmenu / 🎮 ${PREFIX}games ➔ ${g('tools')}`
+]);
 
-const TARGET_MENU = () => boxCard(
-    `🎯 𝗧𝗔𝗥𝗚𝗘𝗧 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 🔥`,
-    [
-        `*${g('NAME LOOPS')}* : ${PREFIX}anc1-7 [text] [ms]`,
-        `*${g('STOP NAME')}*  : ${PREFIX}ancstop`,
-        `*${g('TEXT LOOP')}*  : ${PREFIX}txt [text] [ms]`,
-        `*${g('STOP TEXT')}*  : ${PREFIX}stoptxt`
-    ]
-);
+const TARGET_MENU = () => boxCard(`🎯 𝗧𝗔𝗥𝗚𝗘𝗧 𝗖𝗢𝗡𝗧𝗥𝗢𝗟 🔥`, [
+    `*${g('NAME LOOPS')}* : ${PREFIX}anc1-7 [text] [ms]`,
+    `*${g('STOP NAME')}*  : ${PREFIX}ancstop`,
+    `*${g('TEXT LOOP')}*  : ${PREFIX}txt [text] [ms]`,
+    `*${g('STOP TEXT')}*  : ${PREFIX}stoptxt`
+]);
 
-const GRP_MENU = () => boxCard(
-    `👥 𝗚𝗥𝗢𝗨𝗣 𝗣𝗢𝗪𝗘𝗥 🛡️`,
-    [
-        `*${g('LOCK / UNLOCK')}* : ${PREFIX}lockgc / ${PREFIX}unlockgc`,
-        `*${g('KICK / ADD')}*    : ${PREFIX}kick @user / ${PREFIX}add [num]`,
-        `*${g('WARNS')}*         : ${PREFIX}warn @user / ${PREFIX}unwarn @user`,
-        `*${g('ROLES')}*         : ${PREFIX}promote / ${PREFIX}demote`,
-        `*${g('GROUP INFO')}*    : ${PREFIX}setname / ${PREFIX}setdesc / ${PREFIX}groupinfo / ${PREFIX}admins`,
-        `*${g('GUARDS')}*        : ${PREFIX}antilink on/off / ${PREFIX}welcome on/off / ${PREFIX}tagall`
-    ]
-);
+const GRP_MENU = () => boxCard(`👥 𝗚𝗥𝗢𝗨𝗣 𝗣𝗢𝗪𝗘𝗥 🛡️`, [
+    `*${g('LOCK / UNLOCK')}* : ${PREFIX}lockgc / ${PREFIX}unlockgc`,
+    `*${g('KICK / ADD')}*    : ${PREFIX}kick @user / ${PREFIX}add [num]`,
+    `*${g('WARNS')}*         : ${PREFIX}warn @user / ${PREFIX}unwarn @user`,
+    `*${g('ROLES')}*         : ${PREFIX}promote / ${PREFIX}demote`,
+    `*${g('GROUP INFO')}*    : ${PREFIX}setname / ${PREFIX}setdesc / ${PREFIX}groupinfo / ${PREFIX}admins`,
+    `*${g('GUARDS')}*        : ${PREFIX}antilink on/off / ${PREFIX}welcome on/off / ${PREFIX}tagall`
+]);
 
-const GAMES_MENU = () => boxCard(
-    `🎮 𝗚𝗔𝗠𝗘𝗦 & 𝗧𝗢𝗢𝗟𝗦 🎲`,
-    [
-        `*${g('COIN')}* : ${PREFIX}flip`,
-        `*${g('DICE')}* : ${PREFIX}roll`,
-        `*${g('RPS')}*  : ${PREFIX}rps [rock/paper/scissors]`
-    ]
-);
+const GAMES_MENU = () => boxCard(`🎮 𝗚𝗔𝗠𝗘𝗦 & 𝗧𝗢𝗢𝗟𝗦 🎲`, [
+    `*${g('COIN')}* : ${PREFIX}flip`,
+    `*${g('DICE')}* : ${PREFIX}roll`,
+    `*${g('RPS')}*  : ${PREFIX}rps [rock/paper/scissors]`
+]);
 
-const loopStartLayout = (title, detail) => boxCard(
-    `🔥 ${title.toUpperCase()} ${g('STARTED')} 🔥`,
-    [
-        `*${g('ENGINE')}* : ⚡ ${g('RUNNING LIVE')}`,
-        `*${g('CONFIG')}* : ${detail}`,
-        `*${g('STOP')}*   : 🛑 ${PREFIX}ancstop / ${PREFIX}stoptxt / ${PREFIX}killall`
-    ]
-);
+const loopStartLayout = (title, detail) => boxCard(`🔥 ${title.toUpperCase()} ${g('STARTED')} 🔥`, [
+    `*${g('ENGINE')}* : ⚡ ${g('RUNNING LIVE')}`,
+    `*${g('CONFIG')}* : ${detail}`,
+    `*${g('STOP')}*   : 🛑 ${PREFIX}ancstop / ${PREFIX}stoptxt / ${PREFIX}killall`
+]);
 
-const saveUsers = () => writeJson(PATH_USERS, userData);
+const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
+const genAI = new GoogleGenerativeAI(GEMINI_KEY);
+const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+const recentRepliesSet = new Set();
 
-const isOwner = (j, sessionSelf = null, sessionLid = null) => {
-    if (!j) return false;
-    const cleanJid = String(j).split('@')[0].split(':')[0];
-    if (!cleanJid) return false;
-    if (sessionSelf && String(sessionSelf).split('@')[0].split(':')[0] === cleanJid) return true;
-    if (sessionLid && String(sessionLid).split('@')[0].split(':')[0] === cleanJid) return true;
-    if (CONFIGURED_BOT_NUMBER && cleanJid === CONFIGURED_BOT_NUMBER) return true;
-    return userData.owners.some(o => String(o).split('@')[0].split(':')[0] === cleanJid) ||
-           ADMIN_NUMBERS.some(num => num && num.includes(cleanJid));
-};
+function withTimeout(promise, ms = 9000) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Gemini timeout')), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
-const isSub = (j, grp) => userData.subs[grp]?.includes(j) || false;
-const grantOwner = j => {
-    if (!userData.owners.includes(j)) {
-        userData.owners.push(j);
-        saveUsers();
-        return true;
+async function callGeminiWithFallback(promptText, temperature = 0.92) {
+    for (const modelName of GEMINI_MODELS) {
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName, generationConfig: { temperature } });
+            const res = await withTimeout(model.generateContent(promptText), 9000);
+            const text = res?.response?.text()?.trim();
+            if (text && !recentRepliesSet.has(text)) {
+                recentRepliesSet.add(text);
+                if (recentRepliesSet.size > 80) {
+                    const first = recentRepliesSet.values().next().value;
+                    recentRepliesSet.delete(first);
+                }
+                return text;
+            }
+            if (text) return text;
+        } catch {}
     }
-    return false;
-};
+    return null;
+}
 
+function buildDynamicFallbackReply(userText) {
+    const clean = String(userText || '').trim().toLowerCase();
+    const hasHindi = /[\u0900-\u097F]/.test(userText || '');
+    if (/^(hi+|hello+|hey+|yo+|sup)\b/i.test(clean)) {
+        return hasHindi ? "हाँ भाई, बोलो क्या चल रहा है?" : "Haan bhai, bolo kya chal raha hai?";
+    }
+    if (/(kya haal|kaise ho|kaisa hai|kya kar rahe|kya kr rhe)/i.test(clean)) {
+        return hasHindi ? "सब बढ़िया है भाई, तुम बताओ कैसे हो?" : "Sab badhiya hai bhai, tum batao kaise ho?";
+    }
+    return hasHindi ? "हाँ भाई, समझ गया — आगे क्या करना है बताओ?" : "Haan bhai, samajh gaya — aage kya karna hai batao?";
+}
+
+async function generateMatchingLanguageReply(userText) {
+    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const prompt =
+        `Talk like a normal, natural human friend on WhatsApp. ` +
+        `Reply directly to what the user said in the exact same language and style (Hindi, Hinglish, or English). ` +
+        `Keep it short (1-2 lines), casual, and natural. [ctx:${uniqueTag}]\n\nUser: ${userText}`;
+    const reply = await callGeminiWithFallback(prompt, 0.95);
+    return (reply || buildDynamicFallbackReply(userText)).slice(0, 500);
+}
+
+async function generateDirectAI(userPrompt) {
+    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const prompt =
+        `Answer the user's question directly, clearly, and naturally in the same language as the question. [ctx:${uniqueTag}]\n\nQuestion: ${userPrompt}`;
+    const reply = await callGeminiWithFallback(prompt, 0.88);
+    return (reply || buildDynamicFallbackReply(userPrompt)).slice(0, 1600);
+}
+// =========================================================================
+
+// =========================================================================
+// 4. MESSAGE & GROUP HELPERS
+// =========================================================================
 const SET_KEYS = {
     anc1: 'faces', anc2: 'hearts', anc3: 'hands', anc4: 'flowers',
     anc5: 'sky', anc6: 'animals', anc7: 'fruits'
@@ -539,16 +411,15 @@ async function getFastVersion() {
             cachedBaileysVersion = res.version;
             return res.version;
         }
-    } catch (err) {
-        console.log('[VERSION FETCH WARN]', err?.message || err);
-    }
+    } catch {}
     cachedBaileysVersion = [2, 3000, 1015901307];
     return cachedBaileysVersion;
 }
+// =========================================================================
 
-// ═════════════════════════════════════════════
-//  SESSION MANAGER (SMART PAIRING + AUTO-RECOVER)
-// ═════════════════════════════════════════════
+// =========================================================================
+// 5. ISOLATED SESSION & PAIRING WORKER
+// =========================================================================
 class Session {
     constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false, isPrimary = false) {
         this.id = id;
@@ -558,19 +429,15 @@ class Session {
         this.freshAuth = freshAuth;
         this.logOtpOnce = logOtpOnce;
         this.isPrimary = isPrimary;
+
         this.socket = null;
         this.online = false;
         this.self = null;
         this.selfLid = null;
         this.otpPrinted = false;
-        this.lastPairingCode = null;
-        this.lastError = null;
 
         this.pairingBusy = false;
         this.connecting = false;
-        this.authenticated = false;
-        this.registered = false;
-        this.reconnecting = false;
         this.sessionReady = false;
         this.reconnectAttempts = 0;
 
@@ -638,7 +505,6 @@ class Session {
         this.stopped = true;
         this.online = false;
         this.connecting = false;
-        this.reconnecting = false;
         this.pairingBusy = false;
         this.sessionReady = false;
         this.clearTimers();
@@ -660,12 +526,10 @@ class Session {
     scheduleReconnect(reasonLabel = 'disconnect', customDelayMs = null) {
         if (this.stopped || this.reconnectTimer) return;
         if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-            this.reconnecting = false;
-            console.log(`[RECONNECT MAX] +${this.phone} reached max attempts (${reasonLabel})`);
+            console.log(`[RECONNECT MAX] +${this.phone} (${reasonLabel})`);
             return;
         }
         this.reconnectAttempts += 1;
-        this.reconnecting = true;
         const backoffMs = customDelayMs ?? Math.min(12000, 1200 * Math.pow(1.4, this.reconnectAttempts - 1));
         this.reconnectTimer = setTimeout(() => {
             this.reconnectTimer = null;
@@ -682,20 +546,17 @@ class Session {
             try {
                 await delay(350 * attempt);
                 if (typeof sock?.requestPairingCode !== 'function') {
-                    throw new Error('requestPairingCode not supported on socket');
+                    throw new Error('requestPairingCode unavailable');
                 }
                 const rawCode = await sock.requestPairingCode(this.phone);
-                const clean = String(rawCode || '')
-                    .replace(/[^A-Z0-9]/gi, '')
-                    .toUpperCase()
-                    .slice(0, 8);
+                const clean = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 8);
                 if (clean.length >= 6) {
                     return clean.match(/.{1,4}/g)?.join('-') || clean;
                 }
-                lastErr = new Error('Empty pairing code returned');
+                lastErr = new Error('Empty pairing code');
             } catch (err) {
                 lastErr = err;
-                console.log(`[PAIR ATTEMPT ${attempt}] +${this.phone} err:`, err?.message || err);
+                console.log(`[PAIR ATTEMPT ${attempt}] +${this.phone}:`, err?.message || err);
             }
         }
         throw lastErr || new Error('Pairing code failed');
@@ -715,138 +576,111 @@ class Session {
         this.pairingWatchTimer = setTimeout(() => {
             this.pairingWatchTimer = null;
             if (this.stopped || this.online) return;
-            if (this.pairingBusy) {
+            if (this.pairingBusy && !this.sessionReady) {
                 this.pairingBusy = false;
                 this.connecting = false;
-                if (!this.sessionReady) {
-                    console.log(`[PAIR WATCHDOG] +${this.phone} re-arming socket for login completion`);
-                    this.scheduleReconnect('pairing_watchdog', 900);
-                }
+                this.scheduleReconnect('pairing_watchdog', 900);
             }
         }, PAIR_LOGIN_WATCH_MS);
+    }
+
+    async createSocket(authDir) {
+        const { state, saveCreds } = await useMultiFileAuthState(authDir);
+        const version = await getFastVersion();
+
+        const sock = makeWASocket({
+            auth: state,
+            version,
+            logger: pino({ level: "silent" }),
+            printQRInTerminal: false,
+            browser: Browsers.macOS("Safari"),
+            connectTimeoutMs: 60000,
+            defaultQueryTimeoutMs: 60000,
+            markOnlineOnConnect: false,
+            syncFullHistory: false,
+            msgRetryCounterCache: new Map(),
+            getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
+        });
+
+        this.socket = sock;
+        sock.ev.on("creds.update", async (...args) => {
+            try { await saveCreds(...args); } catch {}
+        });
+
+        sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
+            if (this.stopped || this.socket !== sock) return;
+
+            if (connection === "connecting") {
+                this.connecting = true;
+            } else if (connection === "open") {
+                if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
+                this.online = true;
+                this.connecting = false;
+                this.pairingBusy = false;
+                this.sessionReady = true;
+                this.reconnectAttempts = 0;
+                if (sock.user?.id) this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
+                if (sock.user?.lid) this.selfLid = sock.user.lid.split(':')[0] + '@lid';
+                console.log(`[ONLINE] +${this.phone} ready`);
+                if (this.requesterJid) {
+                    await this.sendInstant(this.requesterJid, boxCard(`✅ 𝗕𝗢𝗧 𝗟𝗜𝗡𝗞𝗘𝗗 ✅`, [
+                        `*${g('NUMBER')}* : +${this.phone}`,
+                        `*${g('STATUS')}* : 🟢 ${g('CONNECTED & READY')}`
+                    ]));
+                }
+            } else if (connection === "close") {
+                this.online = false;
+                this.connecting = false;
+                this.sessionReady = false;
+                if (this.stopped) return;
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const errMsg = lastDisconnect?.error?.message || '';
+                console.log(`[CONN CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
+
+                if (statusCode === DisconnectReason.loggedOut) {
+                    if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
+                    this.pairingBusy = false;
+                    removeDirSafe(authDir);
+                    return;
+                }
+
+                this.pairingBusy = false;
+                this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired' : 'close', 700);
+            }
+        });
+
+        sockSafeBind(this, sock);
+        return { sock, state };
     }
 
     async pairFreshInChat() {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
 
-        this.clearTimers();
+        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+        if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
 
         const authDir = this.getAuthDir();
         removeDirSafe(authDir);
         ensureDir(authDir);
-
         await this.closeSocketCleanly();
 
         this.pairingBusy = true;
         this.connecting = true;
-        this.authenticated = false;
-        this.registered = false;
-        this.reconnecting = false;
         this.sessionReady = false;
         this.reconnectAttempts = 0;
         this.otpPrinted = true;
-        this.lastError = null;
         this.armPairingWatchdog();
 
         try {
-            const { state, saveCreds } = await useMultiFileAuthState(authDir);
-            const version = await getFastVersion();
-
-            const sock = makeWASocket({
-                auth: state,
-                version,
-                logger: pino({ level: "silent" }),
-                printQRInTerminal: false,
-                browser: Browsers.macOS("Safari"),
-                connectTimeoutMs: 60000,
-                defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false,
-                syncFullHistory: false,
-                msgRetryCounterCache: new Map(),
-                getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
-            });
-
-            this.socket = sock;
-            sock.ev.on("creds.update", async (...args) => {
-                try {
-                    await saveCreds(...args);
-                    if (sock.authState?.creds?.registered) {
-                        this.authenticated = true;
-                        this.registered = true;
-                    }
-                } catch (err) {
-                    console.log(`[CREDS SAVE ERR] +${this.phone}:`, err?.message || err);
-                }
-            });
-
-            sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-                if (this.stopped || this.socket !== sock) return;
-                if (connection === "connecting") {
-                    this.connecting = true;
-                } else if (connection === "open") {
-                    if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
-                    this.online = true;
-                    this.connecting = false;
-                    this.reconnecting = false;
-                    this.pairingBusy = false;
-                    this.authenticated = true;
-                    this.registered = true;
-                    this.sessionReady = true;
-                    this.reconnectAttempts = 0;
-                    this.lastError = null;
-                    if (sock.user?.id) {
-                        this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                    }
-                    if (sock.user?.lid) {
-                        this.selfLid = sock.user.lid.split(':')[0] + '@lid';
-                    }
-                    console.log(`[ONLINE] +${this.phone} linked & ready`);
-                    if (this.requesterJid) {
-                        await this.sendInstant(
-                            this.requesterJid,
-                            boxCard(`✅ 𝗕𝗢𝗧 𝗟𝗜𝗡𝗞𝗘𝗗 ✅`, [
-                                `*${g('NUMBER')}* : +${this.phone}`,
-                                `*${g('STATUS')}* : 🟢 ${g('CONNECTED & READY')}`
-                            ])
-                        );
-                    }
-                } else if (connection === "close") {
-                    this.online = false;
-                    this.connecting = false;
-                    this.sessionReady = false;
-                    if (this.stopped) return;
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    const errMsg = lastDisconnect?.error?.message || '';
-                    this.lastError = errMsg || `code_${statusCode || 'unknown'}`;
-                    console.log(`[PAIR CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
-
-                    if (statusCode === DisconnectReason.loggedOut) {
-                        if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
-                        this.pairingBusy = false;
-                        this.authenticated = false;
-                        this.registered = false;
-                        removeDirSafe(authDir);
-                        return;
-                    }
-
-                    // Immediately re-attach socket after pairing/restartRequired (515) so login finishes
-                    this.pairingBusy = false;
-                    this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired_login' : 'pair_close', 700);
-                }
-            });
-
-            sockSafeBind(this, sock);
-
+            const { sock } = await this.createSocket(authDir);
             const formattedCode = await this.requestCleanCode(sock);
-            this.lastPairingCode = formattedCode;
-            this.printCodeInLogsOnce('ADDED NUMBER CODE', formattedCode);
+            this.printCodeInLogsOnce('PAIRING CODE', formattedCode);
             return formattedCode;
         } catch (err) {
             if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
             this.pairingBusy = false;
             this.connecting = false;
-            this.lastError = err?.message || 'Pairing failed';
             throw err;
         }
     }
@@ -859,12 +693,35 @@ class Session {
         this.pairingBusy = true;
         try {
             const formattedCode = await this.requestCleanCode(sock);
-            this.lastPairingCode = formattedCode;
             this.printCodeInLogsOnce('PRIMARY CODE', formattedCode);
         } catch (err) {
             console.log(`[PRIMARY LOG ERR] +${this.phone}:`, err?.message || err);
         } finally {
             this.pairingBusy = false;
+        }
+    }
+
+    async init() {
+        try {
+            if (!this.phone || this.stopped || this.pairingBusy) return;
+            if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+            await this.closeSocketCleanly();
+
+            const authDir = this.getAuthDir();
+            if (this.freshAuth) {
+                removeDirSafe(authDir);
+                this.freshAuth = false;
+            }
+            ensureDir(authDir);
+            this.connecting = true;
+
+            const { sock } = await this.createSocket(authDir);
+            if (this.logOtpOnce && !sock.authState?.creds?.registered && !this.otpPrinted) {
+                this.tryLogPrimaryCodeOnce(sock).catch(() => {});
+            }
+        } catch (e) {
+            this.connecting = false;
+            console.error(`[${this.id}] Init error:`, e.message);
         }
     }
 
@@ -877,126 +734,8 @@ class Session {
             const mentions = participants.filter(Boolean);
             const names = mentions.map(j => `@${j.split('@')[0]}`).join(', ');
             if (names) {
-                await this.sendInstant(
-                    groupJid,
-                    boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS')}* : ${names}`]),
-                    mentions
-                );
+                await this.sendInstant(groupJid, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS')}* : ${names}`]), mentions);
             }
-        }
-    }
-
-    async init() {
-        try {
-            if (!this.phone || this.stopped || this.pairingBusy) return;
-
-            if (this.reconnectTimer) {
-                clearTimeout(this.reconnectTimer);
-                this.reconnectTimer = null;
-            }
-
-            await this.closeSocketCleanly();
-
-            const authDir = this.getAuthDir();
-            if (this.freshAuth) {
-                removeDirSafe(authDir);
-                this.freshAuth = false;
-            }
-            ensureDir(authDir);
-
-            this.connecting = true;
-            const { state, saveCreds } = await useMultiFileAuthState(authDir);
-            const version = await getFastVersion();
-
-            if (this.stopped || this.pairingBusy) {
-                this.connecting = false;
-                return;
-            }
-
-            const sock = makeWASocket({
-                auth: state,
-                version,
-                logger: pino({ level: "silent" }),
-                printQRInTerminal: false,
-                browser: Browsers.macOS("Safari"),
-                connectTimeoutMs: 60000,
-                defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false,
-                syncFullHistory: false,
-                msgRetryCounterCache: new Map(),
-                getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
-            });
-
-            this.socket = sock;
-            sock.ev.on("creds.update", async (...args) => {
-                try {
-                    await saveCreds(...args);
-                    if (sock.authState?.creds?.registered) {
-                        this.authenticated = true;
-                        this.registered = true;
-                    }
-                } catch (err) {
-                    console.log(`[CREDS SAVE ERR] +${this.phone}:`, err?.message || err);
-                }
-            });
-
-            if (this.logOtpOnce && !sock.authState?.creds?.registered && !this.otpPrinted) {
-                this.tryLogPrimaryCodeOnce(sock).catch(() => {});
-            }
-
-            sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-                if (this.stopped || this.socket !== sock) return;
-
-                if (connection === "connecting") {
-                    this.connecting = true;
-                } else if (connection === "open") {
-                    if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
-                    this.online = true;
-                    this.connecting = false;
-                    this.reconnecting = false;
-                    this.pairingBusy = false;
-                    this.authenticated = true;
-                    this.registered = true;
-                    this.sessionReady = true;
-                    this.reconnectAttempts = 0;
-                    this.lastError = null;
-                    if (sock.user?.id) {
-                        this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                    }
-                    if (sock.user?.lid) {
-                        this.selfLid = sock.user.lid.split(':')[0] + '@lid';
-                    }
-                    console.log(`[ONLINE] +${this.phone} logged in`);
-                } else if (connection === "close") {
-                    this.online = false;
-                    this.connecting = false;
-                    this.sessionReady = false;
-                    if (this.stopped) return;
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    const errMsg = lastDisconnect?.error?.message || '';
-                    this.lastError = errMsg || `code_${statusCode || 'unknown'}`;
-                    console.log(`[CONN CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
-
-                    if (statusCode === DisconnectReason.loggedOut) {
-                        if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
-                        this.pairingBusy = false;
-                        this.authenticated = false;
-                        this.registered = false;
-                        removeDirSafe(authDir);
-                        return;
-                    }
-
-                    if (!this.pairingBusy) {
-                        this.scheduleReconnect(statusCode === DisconnectReason.restartRequired ? 'restartRequired' : 'close');
-                    }
-                }
-            });
-
-            sockSafeBind(this, sock);
-        } catch (e) {
-            this.connecting = false;
-            this.lastError = e?.message || 'Init error';
-            console.error(`[${this.id}] Init error:`, e.message);
         }
     }
 
@@ -1007,7 +746,6 @@ class Session {
 
             for (const raw of messages) {
                 if (!raw?.message || !raw?.key?.remoteJid) continue;
-
                 const chat = raw.key.remoteJid;
                 if (chat === 'status@broadcast') continue;
 
@@ -1050,11 +788,10 @@ class Session {
                 if (isGroup && !isOwn && gcSettings.antiLink?.[chat] && hasLink(body)) {
                     try {
                         await this.socket.sendMessage(chat, { delete: raw.key });
-                        await this.sendInstant(
-                            chat,
-                            boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('USER')}*   : @${sender.split('@')[0]}`, `*${g('ACTION')}* : ${g('LINK DELETED')}`]),
-                            [sender]
-                        );
+                        await this.sendInstant(chat, boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [
+                            `*${g('USER')}*   : @${sender.split('@')[0]}`,
+                            `*${g('ACTION')}* : ${g('LINK DELETED')}`
+                        ]), [sender]);
                     } catch {}
                     continue;
                 }
@@ -1064,14 +801,10 @@ class Session {
                 if (allowed && isCommandText) {
                     if (cmd === `${PREFIX}ping` || cmd === '+ping') {
                         const activeCnt = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
-                        await this.sendInstant(
-                            chat,
-                            boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
-                                `*${g('PING')}*     : ${Math.floor(Math.random() * 25) + 12}ms`,
-                                `*${g('ONLINE')}*   : ${activeCnt} ${g('SESSIONS')}`,
-                                `*${g('UPTIME')}*   : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
-                            ])
-                        );
+                        await this.sendInstant(chat, boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
+                            `*${g('ONLINE')}* : ${activeCnt} ${g('SESSIONS')}`,
+                            `*${g('UPTIME')}* : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
+                        ]));
                         continue;
                     }
 
@@ -1079,25 +812,18 @@ class Session {
                         const total = [...this.hub.sessions.values()].filter(s => !s.stopped).length;
                         const online = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
                         const loops = this.nameLoops.size + this.txtLoop.size;
-                        await this.sendInstant(
-                            chat,
-                            boxCard(`📊 𝗘𝗡𝗚𝗜𝗡𝗘 𝗦𝗧𝗔𝗧𝗨𝗦 📊`, [
-                                `*${g('ENGINE')}* : ${runtimeState.botPaused ? `⏸️ ${g('PAUSED')}` : `🟢 ${g('ACTIVE')}`}`,
-                                `*${g('BOTS')}*   : ${online}/${total} ${g('ONLINE')}`,
-                                `*${g('LOOPS')}*  : ${loops} ${g('RUNNING')}`
-                            ])
-                        );
+                        await this.sendInstant(chat, boxCard(`📊 𝗘𝗡𝗚𝗜𝗡𝗘 𝗦𝗧𝗔𝗧𝗨𝗦 📊`, [
+                            `*${g('ENGINE')}* : ${runtimeState.botPaused ? `⏸️ ${g('PAUSED')}` : `🟢 ${g('ACTIVE')}`}`,
+                            `*${g('BOTS')}*   : ${online}/${total} ${g('ONLINE')}`,
+                            `*${g('LOOPS')}*  : ${loops} ${g('RUNNING')}`
+                        ]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}autoreply status`) {
-                        const on = isChatAutoReplyOn(this.phone, chat);
-                        await this.sendInstant(
-                            chat,
-                            boxCard(`🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗦𝗧𝗔𝗧𝗨𝗦 🤖`, [
-                                `*${g('THIS CHAT')}* : ${on ? `🟢 ${g('ON')}` : `🔴 ${g('OFF')}`}`
-                            ])
-                        );
+                        await this.sendInstant(chat, boxCard(`🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗦𝗧𝗔𝗧𝗨𝗦 🤖`, [
+                            `*${g('THIS CHAT')}* : ${isChatAutoReplyOn(this.phone, chat) ? `🟢 ${g('ON')}` : `🔴 ${g('OFF')}`}`
+                        ]));
                         continue;
                     }
 
@@ -1124,33 +850,28 @@ class Session {
                     }
 
                     if (cmd.startsWith(`${PREFIX}unpair `)) {
-                        const rawNum = body.slice(PREFIX.length + 7).trim();
-                        const cleanNum = normalizeStrictPhone(rawNum);
+                        const cleanNum = normalizeStrictPhone(body.slice(PREFIX.length + 7).trim());
                         if (!cleanNum) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}unpair +919876543210`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}unpair +9647882064284`]));
                             continue;
                         }
                         const removed = await this.hub.unpairNumber(cleanNum);
-                        await this.sendInstant(
-                            chat,
-                            boxCard(`🗑️ 𝗦𝗘𝗦𝗦𝗜𝗢𝗡 𝗨𝗡𝗣𝗔𝗜𝗥𝗘𝗗 🗑️`, [
-                                `*${g('NUMBER')}* : +${cleanNum}`,
-                                `*${g('RESULT')}* : ${removed ? `✅ ${g('REMOVED')}` : `⚠️ ${g('NOT FOUND')}`}`
-                            ])
-                        );
+                        await this.sendInstant(chat, boxCard(`🗑️ 𝗦𝗘𝗦𝗦𝗜𝗢𝗡 𝗨𝗡𝗣𝗔𝗜𝗥𝗘𝗗 🗑️`, [
+                            `*${g('NUMBER')}* : +${cleanNum}`,
+                            `*${g('RESULT')}* : ${removed ? `✅ ${g('REMOVED')}` : `⚠️ ${g('NOT FOUND')}`}`
+                        ]));
                         continue;
                     }
 
-                    if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ')) {
-                        const rawNum = body.slice(cmd.startsWith(`${PREFIX}addbot `) ? PREFIX.length + 7 : 6).trim();
+                    if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ') || cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink ')) {
+                        const rawNum = body.replace(new RegExp(`^(\\${PREFIX}(addbot|relink)|\\+(pair|relink))\\s+`, 'i'), '').trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
                         if (!cleanNum) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +919876543210`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +9647882064284`]));
                             continue;
                         }
                         try {
-                            recordUserNumber(sender.split('@')[0], cleanNum);
-                            const code = await this.hub.addNumberInChat(cleanNum, chat, sender.split('@')[0]);
+                            const code = await this.hub.addNumberInChat(cleanNum, chat);
                             await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, code));
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
@@ -1158,236 +879,114 @@ class Session {
                         continue;
                     }
 
-                    if (cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink ')) {
-                        const rawNum = body.slice(cmd.startsWith(`${PREFIX}relink `) ? PREFIX.length + 8 : 8).trim();
-                        const cleanNum = normalizeStrictPhone(rawNum);
-                        if (!cleanNum) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}relink +919876543210`]));
-                            continue;
-                        }
-                        try {
-                            recordUserNumber(sender.split('@')[0], cleanNum);
-                            const code = await this.hub.addNumberInChat(cleanNum, chat, sender.split('@')[0]);
-                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, cleanNum, code));
-                        } catch (err) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
-                        }
-                        continue;
-                    }
-
                     if (cmd === `${PREFIX}bots` || cmd === '+bots') {
                         const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
-                        if (list.length === 0) {
-                            await this.sendInstant(chat, boxCard(`📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 ${g('NUMBERS ADDED')}`]));
-                            continue;
-                        }
-                        await this.sendInstant(chat, BOTS_LIST_BANNER(list));
-                        continue;
-                    }
-
-                    if (cmd === `${PREFIX}menu` || cmd === '+menu') {
-                        await this.sendInstant(chat, MENU_TEXT());
-                        continue;
-                    }
-                    if (cmd === `${PREFIX}targetmenu`) { await this.sendInstant(chat, TARGET_MENU()); continue; }
-                    if (cmd === `${PREFIX}grpmenu`) { await this.sendInstant(chat, GRP_MENU()); continue; }
-                    if (cmd === `${PREFIX}games`) { await this.sendInstant(chat, GAMES_MENU()); continue; }
-
-                    if (cmd === `${PREFIX}lockgc`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        try {
-                            await this.socket.groupSettingUpdate(chat, 'announcement');
-                            await this.sendInstant(chat, boxCard(`🔒 𝗚𝗥𝗢𝗨𝗣 𝗟𝗢𝗖𝗞𝗘𝗗 🔒`, [`*${g('STATUS')}* : ${g('ADMINS ONLY CAN SEND')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd === `${PREFIX}unlockgc`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        try {
-                            await this.socket.groupSettingUpdate(chat, 'not_announcement');
-                            await this.sendInstant(chat, boxCard(`🔓 𝗚𝗥𝗢𝗨𝗣 𝗨𝗡𝗟𝗢𝗖𝗞𝗘𝗗 🔓`, [`*${g('STATUS')}* : ${g('ALL MEMBERS CAN SEND')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}promote`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 7).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        try {
-                            await this.socket.groupParticipantsUpdate(chat, targets, 'promote');
-                            await this.sendInstant(chat, boxCard(`👑 𝗣𝗥𝗢𝗠𝗢𝗧𝗘𝗗 👑`, [`*${g('STATUS')}* : ${g('ADMIN GRANTED')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}demote`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        try {
-                            await this.socket.groupParticipantsUpdate(chat, targets, 'demote');
-                            await this.sendInstant(chat, boxCard(`⬇️ 𝗗𝗘𝗠𝗢𝗧𝗘𝗗 ⬇️`, [`*${g('STATUS')}* : ${g('ADMIN REMOVED')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}mute`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        try {
-                            await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
-                            await this.sendInstant(chat, boxCard(`🔇 𝗠𝗨𝗧𝗘 / 𝗥𝗘𝗠𝗢𝗩𝗘𝗗 🔇`, [`*${g('STATUS')}* : ${g('REMOVED FROM GC')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}unmute`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}unmute +919876543210`])); continue; }
-                        try {
-                            await this.socket.groupParticipantsUpdate(chat, targets, 'add');
-                            await this.sendInstant(chat, boxCard(`🔊 𝗔𝗗𝗗𝗘𝗗 𝗕𝗔𝗖𝗞 🔊`, [`*${g('STATUS')}* : ${g('RESTORED TO GC')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}kick`) || cmd.startsWith(`${PREFIX}remove`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const argPart = body.slice(PREFIX.length + (cmd.startsWith(`${PREFIX}kick`) ? 4 : 6)).trim();
-                        const targets = getTargetUsers(raw, content, argPart);
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        try {
-                            await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
-                            await this.sendInstant(chat, boxCard(`👢 𝗞𝗜𝗖𝗞𝗘𝗗 👢`, [`*${g('STATUS')}* : ${g('REMOVED FROM GROUP')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}warn`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        const target = targets[0];
-                        gcSettings.warns[chat] = gcSettings.warns[chat] || {};
-                        const nextCount = (gcSettings.warns[chat][target] || 0) + 1;
-                        gcSettings.warns[chat][target] = nextCount;
-                        saveGcSettings();
-                        if (nextCount >= MAX_WARNS_BEFORE_KICK) {
-                            gcSettings.warns[chat][target] = 0;
-                            saveGcSettings();
-                            try {
-                                await this.socket.groupParticipantsUpdate(chat, [target], 'remove');
-                                await this.sendInstant(
-                                    chat,
-                                    boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${MAX_WARNS_BEFORE_KICK}/${MAX_WARNS_BEFORE_KICK}`]),
-                                    [target]
-                                );
-                            } catch {
-                                await this.sendInstant(
-                                    chat,
-                                    boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${target.split('@')[0]}`, `*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]),
-                                    [target]
-                                );
-                            }
-                        } else {
-                            await this.sendInstant(
-                                chat,
-                                boxCard(`⚠️ 𝗪𝗔𝗥𝗡𝗜𝗡𝗚 𝗜𝗦𝗦𝗨𝗘𝗗 ⚠️`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${nextCount}/${MAX_WARNS_BEFORE_KICK}`]),
-                                [target]
-                            );
-                        }
-                        continue;
-                    }
-
-                    if (cmd.startsWith(`${PREFIX}unwarn`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
-                        const target = targets[0];
-                        if (gcSettings.warns?.[chat]?.[target]) {
-                            delete gcSettings.warns[chat][target];
-                            saveGcSettings();
-                        }
-                        await this.sendInstant(
-                            chat,
-                            boxCard(`✅ 𝗪𝗔𝗥𝗡𝗦 𝗖𝗟𝗘𝗔𝗥𝗘𝗗 ✅`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : 0/${MAX_WARNS_BEFORE_KICK}`]),
-                            [target]
+                        await this.sendInstant(chat, list.length
+                            ? BOTS_LIST_BANNER(list)
+                            : boxCard(`📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 ${g('NUMBERS ADDED')}`])
                         );
                         continue;
                     }
 
-                    if (cmd.startsWith(`${PREFIX}add `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const num = normalizeStrictPhone(body.slice(PREFIX.length + 4).trim());
-                        if (!num) { await this.sendInstant(chat, boxCard(`⚠️ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}add +919876543210`])); continue; }
-                        try {
-                            await this.socket.groupParticipantsUpdate(chat, [`${num}@s.whatsapp.net`], 'add');
-                            await this.sendInstant(chat, boxCard(`➕ 𝗠𝗘𝗠𝗕𝗘𝗥 𝗔𝗗𝗗𝗘𝗗 ➕`, [`*${g('NUMBER')}* : +${num}`, `*${g('STATUS')}* : ${g('ADDED TO GC')}`]));
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗔𝗗𝗗 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('NUMBER')}* : +${num}`, `*${g('REASON')}* : ${g('PRIVACY OR ADMIN LIMIT')}`]));
-                        }
-                        continue;
-                    }
+                    if (cmd === `${PREFIX}menu` || cmd === '+menu') { await this.sendInstant(chat, MENU_TEXT()); continue; }
+                    if (cmd === `${PREFIX}targetmenu`) { await this.sendInstant(chat, TARGET_MENU()); continue; }
+                    if (cmd === `${PREFIX}grpmenu`) { await this.sendInstant(chat, GRP_MENU()); continue; }
+                    if (cmd === `${PREFIX}games`) { await this.sendInstant(chat, GAMES_MENU()); continue; }
 
-                    if (cmd.startsWith(`${PREFIX}setname `)) {
+                    if (cmd === `${PREFIX}lockgc` || cmd === `${PREFIX}unlockgc`) {
                         if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const title = body.slice(PREFIX.length + 8).trim();
-                        if (!title) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗔𝗠𝗘 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}setname New GC Name`])); continue; }
                         try {
-                            await this.socket.groupUpdateSubject(chat, title);
-                            await this.sendInstant(chat, boxCard(`✏️ 𝗡𝗔𝗠𝗘 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 ✏️`, [`*${g('NEW NAME')}* : ${title}`]));
+                            await this.socket.groupSettingUpdate(chat, cmd === `${PREFIX}lockgc` ? 'announcement' : 'not_announcement');
+                            await this.sendInstant(chat, boxCard(cmd === `${PREFIX}lockgc` ? `🔒 𝗚𝗥𝗢𝗨𝗣 𝗟𝗢𝗖𝗞𝗘𝗗 🔒` : `🔓 𝗚𝗥𝗢𝗨𝗣 𝗨𝗡𝗟𝗢𝗖𝗞𝗘𝗗 🔓`, [`*${g('STATUS')}* : ${g('UPDATED')}`]));
                         } catch {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
-                    if (cmd.startsWith(`${PREFIX}setdesc `)) {
+                    if (cmd.startsWith(`${PREFIX}promote`) || cmd.startsWith(`${PREFIX}demote`) || cmd.startsWith(`${PREFIX}mute`) || cmd.startsWith(`${PREFIX}kick`) || cmd.startsWith(`${PREFIX}remove`)) {
                         if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const desc = body.slice(PREFIX.length + 8).trim();
-                        if (!desc) { await this.sendInstant(chat, boxCard(`⚠️ 𝗗𝗘𝗦𝗖 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}setdesc New Description`])); continue; }
+                        const argPart = body.replace(new RegExp(`^\\${PREFIX}(promote|demote|mute|kick|remove)\\s*`, 'i'), '').trim();
+                        const targets = getTargetUsers(raw, content, argPart);
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
                         try {
-                            await this.socket.groupUpdateDescription(chat, desc);
-                            await this.sendInstant(chat, boxCard(`📝 𝗗𝗘𝗦𝗖 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 📝`, [`*${g('STATUS')}* : ${g('DESCRIPTION SAVED')}`]));
+                            const action = cmd.startsWith(`${PREFIX}promote`) ? 'promote' : (cmd.startsWith(`${PREFIX}demote`) ? 'demote' : 'remove');
+                            await this.socket.groupParticipantsUpdate(chat, targets, action);
+                            await this.sendInstant(chat, boxCard(`✅ 𝗔𝗖𝗧𝗜𝗢𝗡 𝗗𝗢𝗡𝗘 ✅`, [`*${g('ACTION')}* : ${g(action)}`]));
                         } catch {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}antilink on` || cmd === `${PREFIX}antilink off`) {
+                    if (cmd.startsWith(`${PREFIX}unmute`) || cmd.startsWith(`${PREFIX}add `)) {
                         if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
-                        const enabled = cmd.endsWith(' on');
-                        gcSettings.antiLink[chat] = enabled;
-                        saveGcSettings();
-                        await this.sendInstant(chat, boxCard(`🛡️ 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('MODE')}* : ${enabled ? `🟢 ${g('ENABLED')}` : `🔴 ${g('DISABLED')}`}`]));
+                        const rawTarget = body.replace(new RegExp(`^\\${PREFIX}(unmute|add)\\s*`, 'i'), '').trim();
+                        const targets = getTargetUsers(raw, content, rawTarget);
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}add +919876543210`])); continue; }
+                        try {
+                            await this.socket.groupParticipantsUpdate(chat, targets, 'add');
+                            await this.sendInstant(chat, boxCard(`➕ 𝗔𝗗𝗗𝗘𝗗 𝗕𝗔𝗖𝗞 ➕`, [`*${g('STATUS')}* : ${g('ADDED TO GC')}`]));
+                        } catch {
+                            await this.sendInstant(chat, boxCard(`❌ 𝗔𝗗𝗗 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('REASON')}* : ${g('PRIVACY OR ADMIN LIMIT')}`]));
+                        }
                         continue;
                     }
 
-                    if (cmd === `${PREFIX}welcome on` || cmd === `${PREFIX}welcome off`) {
+                    if (cmd.startsWith(`${PREFIX}warn`) || cmd.startsWith(`${PREFIX}unwarn`)) {
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
+                        const isUnwarn = cmd.startsWith(`${PREFIX}unwarn`);
+                        const argPart = body.replace(new RegExp(`^\\${PREFIX}(unwarn|warn)\\s*`, 'i'), '').trim();
+                        const targets = getTargetUsers(raw, content, argPart);
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
+                        const target = targets[0];
+                        gcSettings.warns[chat] = gcSettings.warns[chat] || {};
+                        if (isUnwarn) {
+                            delete gcSettings.warns[chat][target];
+                            saveGcSettings();
+                            await this.sendInstant(chat, boxCard(`✅ 𝗪𝗔𝗥𝗡𝗦 𝗖𝗟𝗘𝗔𝗥𝗘𝗗 ✅`, [`*${g('USER')}* : @${target.split('@')[0]}`]), [target]);
+                        } else {
+                            const nextCount = (gcSettings.warns[chat][target] || 0) + 1;
+                            gcSettings.warns[chat][target] = nextCount;
+                            saveGcSettings();
+                            if (nextCount >= MAX_WARNS_BEFORE_KICK) {
+                                gcSettings.warns[chat][target] = 0;
+                                saveGcSettings();
+                                try {
+                                    await this.socket.groupParticipantsUpdate(chat, [target], 'remove');
+                                    await this.sendInstant(chat, boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}* : @${target.split('@')[0]}`]), [target]);
+                                } catch {
+                                    await this.sendInstant(chat, boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${target.split('@')[0]}`]), [target]);
+                                }
+                            } else {
+                                await this.sendInstant(chat, boxCard(`⚠️ 𝗪𝗔𝗥𝗡𝗜𝗡𝗚 ⚠️`, [`*${g('USER')}* : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${nextCount}/${MAX_WARNS_BEFORE_KICK}`]), [target]);
+                            }
+                        }
+                        continue;
+                    }
+
+                    if (cmd.startsWith(`${PREFIX}setname `) || cmd.startsWith(`${PREFIX}setdesc `)) {
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
+                        const isName = cmd.startsWith(`${PREFIX}setname `);
+                        const val = body.slice(PREFIX.length + 8).trim();
+                        if (!val) continue;
+                        try {
+                            if (isName) await this.socket.groupUpdateSubject(chat, val);
+                            else await this.socket.groupUpdateDescription(chat, val);
+                            await this.sendInstant(chat, boxCard(`✅ 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 ✅`, [`*${g('STATUS')}* : ${g('SAVED')}`]));
+                        } catch {
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
+                        }
+                        continue;
+                    }
+
+                    if (cmd === `${PREFIX}antilink on` || cmd === `${PREFIX}antilink off` || cmd === `${PREFIX}welcome on` || cmd === `${PREFIX}welcome off`) {
                         if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const enabled = cmd.endsWith(' on');
-                        gcSettings.welcome[chat] = enabled;
+                        if (cmd.startsWith(`${PREFIX}antilink`)) gcSettings.antiLink[chat] = enabled;
+                        else gcSettings.welcome[chat] = enabled;
                         saveGcSettings();
-                        await this.sendInstant(chat, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗠𝗦𝗚 👋`, [`*${g('MODE')}* : ${enabled ? `🟢 ${g('ENABLED')}` : `🔴 ${g('DISABLED')}`}`]));
+                        await this.sendInstant(chat, boxCard(`🛡️ 𝗦𝗘𝗧𝗧𝗜𝗡𝗚 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 🛡️`, [`*${g('MODE')}* : ${enabled ? `🟢 ${g('ENABLED')}` : `🔴 ${g('DISABLED')}`}`]));
                         continue;
                     }
 
@@ -1396,31 +995,17 @@ class Session {
                         try {
                             const meta = await this.socket.groupMetadata(chat);
                             const adminList = (meta.participants || []).filter(p => p.admin === 'admin' || p.admin === 'superadmin');
-                            const adminTags = adminList.map(p => `@${p.id.split('@')[0]}`);
                             const mentions = adminList.map(p => p.id);
                             if (cmd === `${PREFIX}admins`) {
-                                await this.sendInstant(
-                                    chat,
-                                    boxCard(`👑 𝗚𝗥𝗢𝗨𝗣 𝗔𝗗𝗠𝗜𝗡𝗦 (${adminTags.length}) 👑`, adminTags.length ? adminTags : [g('NO ADMINS FOUND')]),
-                                    mentions
-                                );
+                                await this.sendInstant(chat, boxCard(`👑 𝗔𝗗𝗠𝗜𝗡𝗦 (${mentions.length}) 👑`, mentions.length ? mentions.map(j => `@${j.split('@')[0]}`) : [g('NONE')]), mentions);
                             } else {
-                                await this.sendInstant(
-                                    chat,
-                                    boxCard(
-                                        `📌 𝗚𝗥𝗢𝗨𝗣 𝗜𝗡𝗙𝗢 📌`,
-                                        [
-                                            `*${g('NAME')}*    : ${meta.subject}`,
-                                            `*${g('MEMBERS')}* : ${meta.participants?.length || 0}`,
-                                            `*${g('ADMINS')}*  : ${adminTags.length}`
-                                        ]
-                                    ),
-                                    mentions
-                                );
+                                await this.sendInstant(chat, boxCard(`📌 𝗚𝗥𝗢𝗨𝗣 𝗜𝗡𝗙𝗢 📌`, [
+                                    `*${g('NAME')}*    : ${meta.subject}`,
+                                    `*${g('MEMBERS')}* : ${meta.participants?.length || 0}`,
+                                    `*${g('ADMINS')}*  : ${mentions.length}`
+                                ]), mentions);
                             }
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗙𝗢 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('STATUS')}* : ${g('FAILED TO FETCH GC INFO')}`]));
-                        }
+                        } catch {}
                         continue;
                     }
 
@@ -1429,49 +1014,33 @@ class Session {
                         try {
                             const meta = await this.socket.groupMetadata(chat);
                             const members = (meta.participants || []).map(p => p.id).filter(Boolean);
-                            const customMsg = body.replace(new RegExp(`^\\${PREFIX}(tagall|everyone)\\s*`, 'i'), '').trim() || 'Attention everyone!';
-                            const chunkSize = 20;
-                            for (let i = 0; i < members.length; i += chunkSize) {
+                            const note = body.replace(new RegExp(`^\\${PREFIX}(tagall|everyone)\\s*`, 'i'), '').trim() || 'Attention!';
+                            for (let i = 0; i < members.length; i += 20) {
                                 if (runtimeState.botPaused || this.stopped) break;
-                                const slice = members.slice(i, i + chunkSize);
-                                const tagsText = slice.map(j => `@${j.split('@')[0]}`).join(' ');
-                                await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${customMsg}`, tagsText]), slice);
-                                if (i + chunkSize < members.length) {
-                                    await delay(800);
-                                }
+                                const slice = members.slice(i, i + 20);
+                                await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${note}`, slice.map(j => `@${j.split('@')[0]}`).join(' ')]), slice);
+                                if (i + 20 < members.length) await delay(800);
                             }
-                        } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗧𝗔𝗚𝗔𝗟𝗟 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('STATUS')}* : ${g('TRY AGAIN')}`]));
-                        }
+                        } catch {}
                         continue;
                     }
 
                     if (cmd === `${PREFIX}flip`) {
-                        const side = Math.random() < 0.5 ? `🪙 ${g('HEADS')}` : `🪙 ${g('TAILS')}`;
-                        await this.sendInstant(chat, boxCard(`🪙 𝗖𝗢𝗜𝗡 𝗙𝗟𝗜𝗣 🪙`, [`*${g('RESULT')}* : ${side}`]));
+                        await this.sendInstant(chat, boxCard(`🪙 𝗖𝗢𝗜𝗡 𝗙𝗟𝗜𝗣 🪙`, [`*${g('RESULT')}* : ${Math.random() < 0.5 ? g('HEADS') : g('TAILS')}`]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}roll`) {
-                        const num = Math.floor(Math.random() * 6) + 1;
-                        await this.sendInstant(chat, boxCard(`🎲 𝗗𝗜𝗖𝗘 𝗥𝗢𝗟𝗟 🎲`, [`*${g('NUMBER')}* : *${num}*`]));
+                        await this.sendInstant(chat, boxCard(`🎲 𝗗𝗜𝗖𝗘 𝗥𝗢𝗟𝗟 🎲`, [`*${g('NUMBER')}* : *${Math.floor(Math.random() * 6) + 1}*`]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}rps` || cmd.startsWith(`${PREFIX}rps `)) {
-                        const choices = ['rock', 'paper', 'scissors'];
-                        const botPick = choices[Math.floor(Math.random() * choices.length)];
-                        const userPick = body.slice(PREFIX.length + 3).trim().toLowerCase();
-                        await this.sendInstant(
-                            chat,
-                            boxCard(
-                                `🎮 𝗥𝗢𝗖𝗞 𝗣𝗔𝗣𝗘𝗥 𝗦𝗖𝗜𝗦𝗦𝗢𝗥𝗦 🎮`,
-                                [
-                                    `*${g('YOU')}* : ${g(userPick || 'RANDOM')}`,
-                                    `*${g('BOT')}* : ${g(botPick)}`
-                                ]
-                            )
-                        );
+                        const picks = ['rock', 'paper', 'scissors'];
+                        await this.sendInstant(chat, boxCard(`🎮 𝗥𝗣𝗦 🎮`, [
+                            `*${g('YOU')}* : ${g(body.slice(PREFIX.length + 3).trim().toLowerCase() || 'RANDOM')}`,
+                            `*${g('BOT')}* : ${g(picks[Math.floor(Math.random() * picks.length)])}`
+                        ]));
                         continue;
                     }
 
@@ -1483,10 +1052,7 @@ class Session {
 
                     if (cmd.startsWith('+ai ') || cmd.startsWith(`${PREFIX}ai `)) {
                         const prompt = body.slice(body.startsWith('+ai ') ? 4 : PREFIX.length + 3).trim();
-                        if (!prompt) {
-                            await this.sendInstant(chat, boxCard(`⚠️ 𝗣𝗥𝗢𝗠𝗣𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}ai your question`]));
-                            continue;
-                        }
+                        if (!prompt) continue;
                         const reqEpoch = GLOBAL_EPOCH;
                         const reply = await generateDirectAI(prompt);
                         if (!runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH) {
@@ -1497,19 +1063,15 @@ class Session {
 
                     if (cmd.startsWith(`${PREFIX}txt `)) {
                         const parts = body.slice(PREFIX.length + 4).trim().split(/\s+/);
-                        const lastToken = parts[parts.length - 1];
-                        const maybeMs = Number(lastToken);
+                        const maybeMs = Number(parts[parts.length - 1]);
                         let ms = DEFAULT_LOOP_MS;
                         let txt = parts.join(' ');
-
                         if (parts.length > 1 && Number.isFinite(maybeMs) && maybeMs > 0) {
                             ms = getSafeDelay(maybeMs);
                             parts.pop();
                             txt = parts.join(' ');
                         }
-                        if (!txt) continue;
-
-                        await this.handle('txt_start', { chat, txt, ms }, true);
+                        if (txt) await this.handle('txt_start', { chat, txt, ms }, true);
                         continue;
                     }
 
@@ -1522,23 +1084,18 @@ class Session {
                                 if (!isGroup) await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`]));
                                 break;
                             }
-
                             const parts = rawArgs.split(/\s+/);
-                            const lastToken = parts[parts.length - 1];
-                            const maybeMs = Number(lastToken);
+                            const maybeMs = Number(parts[parts.length - 1]);
                             let ms = getSafeDelay(timingMap[key] || DEFAULT_LOOP_MS);
                             let txt = rawArgs;
-
                             if (parts.length > 1 && Number.isFinite(maybeMs) && maybeMs > 0) {
                                 ms = getSafeDelay(maybeMs);
                                 parts.pop();
                                 txt = parts.join(' ');
                             }
                             if (!txt) break;
-
                             timingMap[key] = ms;
                             writeJson(PATH_TIMING, timingMap);
-
                             await this.handle('nc_start', { chat, txt: iFnt(txt), key, setName, ms }, true);
                             break;
                         }
@@ -1546,41 +1103,26 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
-                if (
-                    !runtimeState.botPaused &&
-                    isChatAutoReplyOn(this.phone, chat) &&
-                    !isFromMe &&
-                    body &&
-                    !isCommandText
-                ) {
+                if (!runtimeState.botPaused && isChatAutoReplyOn(this.phone, chat) && !isFromMe && body && !isCommandText) {
                     const reqEpoch = GLOBAL_EPOCH;
                     const chosenEmoji = pickRandomReaction();
-
                     this.enqueueSend(async () => {
                         if (!this.stopped && !runtimeState.botPaused && this.socket && isChatAutoReplyOn(this.phone, chat)) {
                             await this.socket.sendMessage(chat, { react: { text: chosenEmoji, key: raw.key } });
                         }
                     });
 
-                    const replyKey = `${normalizeChatKey(chat)}__${sender}`;
+                    const replyKey = `${String(chat).trim()}__${sender}`;
                     const lastTs = this.lastAutoReplyAt.get(replyKey) || 0;
                     if (Date.now() - lastTs >= AUTO_REPLY_COOLDOWN_MS) {
                         this.lastAutoReplyAt.set(replyKey, Date.now());
                         (async () => {
                             try {
                                 const replyText = await generateMatchingLanguageReply(body);
-                                if (
-                                    replyText &&
-                                    !runtimeState.botPaused &&
-                                    reqEpoch === GLOBAL_EPOCH &&
-                                    isChatAutoReplyOn(this.phone, chat) &&
-                                    !this.stopped
-                                ) {
+                                if (replyText && !runtimeState.botPaused && reqEpoch === GLOBAL_EPOCH && isChatAutoReplyOn(this.phone, chat) && !this.stopped) {
                                     await this.sendQuoted(chat, replyText, raw);
                                 }
-                            } catch (e) {
-                                console.log('[AUTOREPLY SAFE ERR]', e?.message || e);
-                            }
+                            } catch {}
                         })();
                     }
                 }
@@ -1595,121 +1137,72 @@ class Session {
         const { chat } = payload;
         const startEpoch = GLOBAL_EPOCH;
         try {
-            switch (cmd) {
-                case 'nc_start': {
-                    const { txt, key, setName, ms } = payload;
-                    if (!chat.endsWith('@g.us')) return;
-                    const emojis = SETS[setName] || SETS.faces;
-                    const safeDelay = getSafeDelay(ms ?? timingMap[key] ?? DEFAULT_LOOP_MS);
-                    const tid = `${chat}__nc_${key}`;
+            if (cmd === 'nc_start') {
+                const { txt, key, setName, ms } = payload;
+                if (!chat.endsWith('@g.us')) return;
+                const emojis = SETS[setName] || SETS.faces;
+                const safeDelay = getSafeDelay(ms ?? timingMap[key] ?? DEFAULT_LOOP_MS);
+                const tid = `${chat}__nc_${key}`;
+                const prev = this.nameLoops.get(tid);
+                const nextEpoch = (prev?.epoch || 0) + 1;
+                if (prev) prev.active = false;
+                const stateObj = { active: true, epoch: nextEpoch };
+                this.nameLoops.set(tid, stateObj);
 
-                    const prev = this.nameLoops.get(tid);
-                    const nextEpoch = (prev?.epoch || 0) + 1;
-                    if (prev) prev.active = false;
-
-                    const stateObj = { active: true, epoch: nextEpoch };
-                    this.nameLoops.set(tid, stateObj);
-
-                    let idx = 0;
-                    (async () => {
-                        while (
-                            !this.stopped &&
-                            !runtimeState.botPaused &&
-                            startEpoch === GLOBAL_EPOCH &&
-                            stateObj.active &&
-                            this.nameLoops.get(tid) === stateObj &&
-                            stateObj.epoch === nextEpoch
-                        ) {
-                            if (!this.socket) {
-                                await delay(800);
-                                continue;
-                            }
+                let idx = 0;
+                (async () => {
+                    while (!this.stopped && !runtimeState.botPaused && startEpoch === GLOBAL_EPOCH && stateObj.active && this.nameLoops.get(tid) === stateObj) {
+                        if (this.socket) {
                             const emo1 = emojis[idx % emojis.length];
                             const emo2 = emojis[(idx + 3) % emojis.length];
                             idx += 1;
-                            try {
-                                await this.socket.groupUpdateSubject(chat, `${emo1} ⚡ ${txt} ⚡ ${emo2}`);
-                            } catch {}
-
-                            const step = 120;
-                            let elapsed = 0;
-                            while (elapsed < safeDelay) {
-                                if (
-                                    this.stopped ||
-                                    runtimeState.botPaused ||
-                                    startEpoch !== GLOBAL_EPOCH ||
-                                    !stateObj.active ||
-                                    this.nameLoops.get(tid) !== stateObj
-                                ) return;
-                                await delay(Math.min(step, safeDelay - elapsed));
-                                elapsed += step;
-                            }
+                            try { await this.socket.groupUpdateSubject(chat, `${emo1} ⚡ ${txt} ⚡ ${emo2}`); } catch {}
                         }
-                    })();
+                        let elapsed = 0;
+                        while (elapsed < safeDelay) {
+                            if (this.stopped || runtimeState.botPaused || startEpoch !== GLOBAL_EPOCH || !stateObj.active || this.nameLoops.get(tid) !== stateObj) return;
+                            await delay(Math.min(120, safeDelay - elapsed));
+                            elapsed += 120;
+                        }
+                    }
+                })();
+                if (notify) await this.sendInstant(chat, loopStartLayout(key, `DELAY: ${safeDelay}ms`));
+            } else if (cmd === 'txt_start') {
+                const { txt, ms } = payload;
+                const safeDelay = getSafeDelay(ms ?? DEFAULT_LOOP_MS);
+                const txtKey = `${chat}__txt`;
+                const prev = this.txtLoop.get(txtKey);
+                const nextEpoch = (prev?.epoch || 0) + 1;
+                if (prev) prev.active = false;
+                const loopObj = { active: true, epoch: nextEpoch };
+                this.txtLoop.set(txtKey, loopObj);
 
-                    if (notify) await this.sendInstant(chat, loopStartLayout(key, `DELAY: ${safeDelay}ms`));
-                    break;
-                }
-                case 'txt_start': {
-                    const { txt, ms } = payload;
-                    const safeDelay = getSafeDelay(ms ?? DEFAULT_LOOP_MS);
-                    const txtKey = `${chat}__txt`;
-
-                    const prev = this.txtLoop.get(txtKey);
-                    const nextEpoch = (prev?.epoch || 0) + 1;
-                    if (prev) prev.active = false;
-
-                    const loopObj = { active: true, epoch: nextEpoch };
-                    this.txtLoop.set(txtKey, loopObj);
-
-                    (async () => {
-                        while (
-                            !this.stopped &&
-                            !runtimeState.botPaused &&
-                            startEpoch === GLOBAL_EPOCH &&
-                            loopObj.active &&
-                            this.txtLoop.get(txtKey) === loopObj &&
-                            loopObj.epoch === nextEpoch
-                        ) {
-                            if (!this.socket) {
-                                await delay(800);
-                                continue;
-                            }
+                (async () => {
+                    while (!this.stopped && !runtimeState.botPaused && startEpoch === GLOBAL_EPOCH && loopObj.active && this.txtLoop.get(txtKey) === loopObj) {
+                        if (this.socket) {
                             try {
                                 const sent = await this.socket.sendMessage(chat, { text: txt });
                                 if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
                             } catch {}
-
-                            const step = 120;
-                            let elapsed = 0;
-                            while (elapsed < safeDelay) {
-                                if (
-                                    this.stopped ||
-                                    runtimeState.botPaused ||
-                                    startEpoch !== GLOBAL_EPOCH ||
-                                    !loopObj.active ||
-                                    this.txtLoop.get(txtKey) !== loopObj
-                                ) return;
-                                await delay(Math.min(step, safeDelay - elapsed));
-                                elapsed += step;
-                            }
                         }
-                    })();
-
-                    if (notify) await this.sendInstant(chat, loopStartLayout('text loop', `DELAY: ${safeDelay}ms`));
-                    break;
-                }
+                        let elapsed = 0;
+                        while (elapsed < safeDelay) {
+                            if (this.stopped || runtimeState.botPaused || startEpoch !== GLOBAL_EPOCH || !loopObj.active || this.txtLoop.get(txtKey) !== loopObj) return;
+                            await delay(Math.min(120, safeDelay - elapsed));
+                            elapsed += 120;
+                        }
+                    }
+                })();
+                if (notify) await this.sendInstant(chat, loopStartLayout('text loop', `DELAY: ${safeDelay}ms`));
             }
         } catch {}
     }
 
     enqueueSend(taskFn) {
-        this.sendQueue = this.sendQueue
-            .then(async () => {
-                await taskFn();
-                await delay(80 + Math.floor(Math.random() * 60));
-            })
-            .catch(() => {});
+        this.sendQueue = this.sendQueue.then(async () => {
+            await taskFn();
+            await delay(80 + Math.floor(Math.random() * 60));
+        }).catch(() => {});
         return this.sendQueue;
     }
 
@@ -1737,17 +1230,18 @@ function sockSafeBind(session, targetSock = session.socket) {
     if (!targetSock) return;
     targetSock.ev.on('messages.upsert', m => {
         if (session.socket !== targetSock) return;
-        session.receive(m).catch(err => {
-            console.log('[UPSERT SAFE ERR]', err?.message || err);
-        });
+        session.receive(m).catch(err => console.log('[UPSERT SAFE ERR]', err?.message || err));
     });
-
     targetSock.ev.on('group-participants.update', ev => {
         if (session.socket !== targetSock) return;
         session.onGroupParticipantsUpdate(ev).catch(() => {});
     });
 }
+// =========================================================================
 
+// =========================================================================
+// 6. HUB QUEUE & SERVER ENTRYPOINT
+// =========================================================================
 class Hub {
     constructor() {
         this.sessions = new Map();
@@ -1769,13 +1263,11 @@ class Hub {
         writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
     }
 
-    async addNumberInChat(phone, requesterJid = null, userId = 'user-1') {
+    async addNumberInChat(phone, requesterJid = null) {
         const clean = normalizeStrictPhone(phone);
         if (!clean) throw new Error('Invalid phone number');
 
         const runTask = async () => {
-            recordUserNumber(userId, clean);
-
             const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
             const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
             for (const [key, oldSess] of existingEntries) {
@@ -1810,7 +1302,6 @@ class Hub {
             }
         }
         removeDirSafe(PATH_AUTH(clean));
-        removeUserNumberEverywhere(clean);
         const remaining = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
         this.saveNumbers(remaining);
         return found;
@@ -1821,10 +1312,7 @@ class Hub {
         runtimeState.botPaused = true;
         runtimeState.autoReplyChats = {};
         saveRuntimeState();
-
-        for (const sess of this.sessions.values()) {
-            sess.stopAllLoops();
-        }
+        for (const sess of this.sessions.values()) sess.stopAllLoops();
     }
 
     resumeAllBots() {
@@ -1834,9 +1322,7 @@ class Hub {
     }
 
     async shutdownAll() {
-        for (const sess of this.sessions.values()) {
-            await sess.destroySession(true);
-        }
+        for (const sess of this.sessions.values()) await sess.destroySession(true);
         this.sessions.clear();
     }
 
@@ -1855,194 +1341,44 @@ class Hub {
     }
 }
 
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/health', (_req, res) => {
+    res.status(200).json({ ok: true, service: 'SMW Direct Engine', paused: runtimeState.botPaused });
+});
+
+function startKeepAlive() {
+    const intervalMs = PING_MINUTES * 60 * 1000;
+    const pingUrl = process.env.RENDER_EXTERNAL_URL
+        ? `${process.env.RENDER_EXTERNAL_URL.replace(/\/+$/, '')}/health`
+        : `http://127.0.0.1:${PORT}/health`;
+    setInterval(async () => {
+        try { await fetch(pingUrl); } catch {}
+    }, intervalMs);
+}
+
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v19.0 ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — DIRECT ENGINE ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  Edition           : Ultra Smart Pairing
-  Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'PANEL / DYNAMIC ONLY'}
-  Browser Profile   : macOS Safari (Auto-Recover)
-  Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
-  Initial Mode      : STANDBY (Send !start to run)
+  International Bot : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
+  Mode              : DIRECT WHATSAPP (NO APK)
+  Initial State     : STANDBY (Send !start)
   Port              : ${PORT}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
-process.on('uncaughtException', err => {
-    console.log('[SAFE UNCAUGHT]', err?.message || err);
-});
-process.on('unhandledRejection', err => {
-    console.log('[SAFE REJECTION]', err?.message || err);
-});
+process.on('uncaughtException', err => console.log('[SAFE UNCAUGHT]', err?.message || err));
+process.on('unhandledRejection', err => console.log('[SAFE REJECTION]', err?.message || err));
 
 const hub = new Hub();
 
-// REST API FOR APK / HTML DASHBOARD
-app.post('/api/pair', async (req, res) => {
-    try {
-        const cleanPhone = normalizeStrictPhone(req.body?.phone);
-        const userId = sanitizeUserId(req.body?.userId);
-        if (!cleanPhone) {
-            return res.status(400).json({ ok: false, error: 'Invalid Indian or International phone number' });
-        }
-        const code = await hub.addNumberInChat(cleanPhone, null, userId);
-        return res.json({ ok: true, phone: cleanPhone, userId, code });
-    } catch (err) {
-        return res.status(500).json({ ok: false, error: err?.message || 'Pairing failed' });
-    }
-});
-
-app.post('/api/relink', async (req, res) => {
-    try {
-        const cleanPhone = normalizeStrictPhone(req.body?.phone);
-        const userId = sanitizeUserId(req.body?.userId);
-        if (!cleanPhone) {
-            return res.status(400).json({ ok: false, error: 'Invalid Indian or International phone number' });
-        }
-        const code = await hub.addNumberInChat(cleanPhone, null, userId);
-        return res.json({ ok: true, phone: cleanPhone, userId, code });
-    } catch (err) {
-        return res.status(500).json({ ok: false, error: err?.message || 'Relink failed' });
-    }
-});
-
-app.post('/api/unpair', async (req, res) => {
-    try {
-        const cleanPhone = normalizeStrictPhone(req.body?.phone);
-        if (!cleanPhone) {
-            return res.status(400).json({ ok: false, error: 'Invalid phone number' });
-        }
-        const removed = await hub.unpairNumber(cleanPhone);
-        return res.json({ ok: true, phone: cleanPhone, removed });
-    } catch (err) {
-        return res.status(500).json({ ok: false, error: err?.message || 'Unpair failed' });
-    }
-});
-
-app.get('/api/status', (req, res) => {
-    const userId = sanitizeUserId(req.query?.userId);
-    const phone = normalizeStrictPhone(req.query?.phone);
-    const activeSessions = [...hub.sessions.values()].filter(s => !s.stopped);
-    const targetSess = phone ? activeSessions.find(s => s.phone === phone) : null;
-
-    return res.json({
-        ok: true,
-        userId,
-        paused: runtimeState.botPaused,
-        totalSessions: activeSessions.length,
-        onlineSessions: activeSessions.filter(s => s.online).length,
-        session: targetSess ? {
-            phone: targetSess.phone,
-            online: Boolean(targetSess.online),
-            connecting: Boolean(targetSess.connecting),
-            pairingBusy: Boolean(targetSess.pairingBusy),
-            sessionReady: Boolean(targetSess.sessionReady),
-            lastError: targetSess.lastError
-        } : null
-    });
-});
-
-app.get('/api/bots', (req, res) => {
-    const userId = sanitizeUserId(req.query?.userId);
-    const allowedNums = Array.isArray(userBotsMap[userId]) ? userBotsMap[userId] : null;
-    const activeSessions = [...hub.sessions.values()].filter(s => !s.stopped);
-    const filtered = allowedNums && allowedNums.length > 0
-        ? activeSessions.filter(s => allowedNums.includes(s.phone))
-        : activeSessions;
-
-    return res.json({
-        ok: true,
-        userId,
-        bots: filtered.map(s => ({
-            phone: s.phone,
-            online: Boolean(s.online),
-            connecting: Boolean(s.connecting),
-            pairingBusy: Boolean(s.pairingBusy),
-            sessionReady: Boolean(s.sessionReady)
-        }))
-    });
-});
-
-app.post('/api/command', async (req, res) => {
-    try {
-        const rawCmd = String(req.body?.command || '').trim();
-        const userId = sanitizeUserId(req.body?.userId);
-        const lower = rawCmd.toLowerCase();
-
-        if (!rawCmd) {
-            return res.status(400).json({ ok: false, error: 'Empty command' });
-        }
-
-        if (lower === `${PREFIX}start` || lower === '+start') {
-            hub.resumeAllBots();
-            return res.json({ ok: true, reply: GRAND_START_BANNER() });
-        }
-
-        if (lower === `${PREFIX}killall` || lower === '-all') {
-            hub.pauseAllBotsKeepSessionAlive();
-            return res.json({ ok: true, reply: KILL_ALL_BANNER() });
-        }
-
-        if (lower === `${PREFIX}ping` || lower === '+ping') {
-            const activeCnt = [...hub.sessions.values()].filter(s => !s.stopped && s.online).length;
-            return res.json({
-                ok: true,
-                reply: boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
-                    `*${g('ONLINE')}* : ${activeCnt} ${g('SESSIONS')}`,
-                    `*${g('UPTIME')}* : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
-                ])
-            });
-        }
-
-        if (lower === `${PREFIX}status` || lower === '+status') {
-            const total = [...hub.sessions.values()].filter(s => !s.stopped).length;
-            const online = [...hub.sessions.values()].filter(s => !s.stopped && s.online).length;
-            return res.json({
-                ok: true,
-                reply: boxCard(`📊 𝗘𝗡𝗚𝗜𝗡𝗘 𝗦𝗧𝗔𝗧𝗨𝗦 📊`, [
-                    `*${g('ENGINE')}* : ${runtimeState.botPaused ? `⏸️ ${g('PAUSED')}` : `🟢 ${g('ACTIVE')}`}`,
-                    `*${g('BOTS')}*   : ${online}/${total} ${g('ONLINE')}`
-                ])
-            });
-        }
-
-        if (lower === `${PREFIX}menu` || lower === '+menu') {
-            return res.json({ ok: true, reply: MENU_TEXT() });
-        }
-
-        if (lower === `${PREFIX}bots` || lower === '+bots') {
-            const allowedNums = Array.isArray(userBotsMap[userId]) ? userBotsMap[userId] : null;
-            const list = [...hub.sessions.values()].filter(s =>
-                !s.stopped && (!allowedNums || !allowedNums.length || allowedNums.includes(s.phone))
-            );
-            return res.json({
-                ok: true,
-                reply: list.length ? BOTS_LIST_BANNER(list) : boxCard(`📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 ${g('NUMBERS ADDED')}`])
-            });
-        }
-
-        if (lower.startsWith(`${PREFIX}ai `) || lower.startsWith('+ai ')) {
-            const prompt = rawCmd.slice(lower.startsWith('+ai ') ? 4 : PREFIX.length + 3).trim();
-            const aiText = await generateDirectAI(prompt || 'Hello');
-            return res.json({ ok: true, reply: boxCard(`🧠 𝗦𝗠𝗪 𝗔𝗜 🧠`, [aiText]) });
-        }
-
-        return res.json({
-            ok: true,
-            reply: boxCard(`⚡ 𝗖𝗠𝗗 𝗥𝗘𝗖𝗘𝗜𝗩𝗘𝗗 ⚡`, [`*${g('USER')}* : ${g(userId)}`, `*${g('CMD')}*  : ${rawCmd}`])
-        });
-    } catch (err) {
-        return res.status(500).json({ ok: false, error: err?.message || 'Command failed' });
-    }
-});
-
 process.on('SIGTERM', async () => {
-    console.log('[SHUTDOWN] SIGTERM received, closing sockets cleanly...');
     await hub.shutdownAll();
     process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-    console.log('[SHUTDOWN] SIGINT received, closing sockets cleanly...');
     await hub.shutdownAll();
     process.exit(0);
 });
