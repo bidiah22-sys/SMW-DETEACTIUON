@@ -1,5 +1,5 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.2                        ║
+// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.3                        ║
 // ║          Multi-Bot WhatsApp Manager & Loop Engine            ║
 // ╚══════════════════════════════════════════════════════════════╝
 
@@ -179,7 +179,7 @@ function getSafeDelay(inputMs) {
 }
 
 // ─────────────────────────────────────────────
-//  GEMINI AI ENGINE (UNIQUE PER-PROMPT & NO STATIC REPEATS)
+//  GEMINI AI ENGINE (NATURAL CHAT & UNIQUE REPLIES)
 // ─────────────────────────────────────────────
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
@@ -194,7 +194,7 @@ function withTimeout(promise, ms = 9000) {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function callGeminiWithFallback(promptText, temperature = 0.85) {
+async function callGeminiWithFallback(promptText, temperature = 0.92) {
     for (const modelName of GEMINI_MODELS) {
         try {
             const model = genAI.getGenerativeModel({
@@ -205,7 +205,7 @@ async function callGeminiWithFallback(promptText, temperature = 0.85) {
             const text = res?.response?.text()?.trim();
             if (text && !recentRepliesSet.has(text)) {
                 recentRepliesSet.add(text);
-                if (recentRepliesSet.size > 60) {
+                if (recentRepliesSet.size > 80) {
                     const first = recentRepliesSet.values().next().value;
                     recentRepliesSet.delete(first);
                 }
@@ -218,45 +218,39 @@ async function callGeminiWithFallback(promptText, temperature = 0.85) {
 }
 
 function buildDynamicFallbackReply(userText) {
-    const clean = String(userText || '').trim();
-    const hasHindi = /[\u0900-\u097F]/.test(clean);
-    const seed = Math.floor(Math.random() * 1000);
+    const clean = String(userText || '').trim().toLowerCase();
+    const hasHindi = /[\u0900-\u097F]/.test(userText || '');
 
-    if (hasHindi) {
-        const hiOptions = [
-            `"${clean.slice(0, 60)}" — इस पर क्या करना है, साफ बताओ (#${seed % 99 + 1})?`,
-            `तुमने कहा "${clean.slice(0, 60)}" — आगे का प्लान क्या रखें?`,
-            `"${clean.slice(0, 60)}" के बारे में और डिटेल दो, मैं सुन रहा हूँ।`
-        ];
-        return hiOptions[seed % hiOptions.length];
+    if (/^(hi+|hello+|hey+|yo+|sup)\b/i.test(clean)) {
+        return hasHindi ? "हाँ भाई, बोलो क्या चल रहा है?" : "Haan bhai, bolo kya chal raha hai?";
     }
-
-    const enOptions = [
-        `"${clean.slice(0, 60)}" — what's the next move on this?`,
-        `Got your message: "${clean.slice(0, 60)}" — tell me how you want to handle it.`,
-        `Reading "${clean.slice(0, 60)}" — give me more details if needed.`
-    ];
-    return enOptions[seed % enOptions.length];
+    if (/(kya haal|kaise ho|kaisa hai|kya kar rahe|kya kr rhe)/i.test(clean)) {
+        return hasHindi ? "सब बढ़िया है भाई, तुम बताओ कैसे हो?" : "Sab badhiya hai bhai, tum batao kaise ho?";
+    }
+    if (hasHindi) {
+        return "हाँ भाई, समझ गया — आगे क्या करना है बताओ?";
+    }
+    return "Haan bhai, samajh gaya — aage kya karna hai batao?";
 }
 
 async function generateMatchingLanguageReply(userText) {
     const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const prompt =
-        `You are a smart WhatsApp chat assistant. Reply directly and specifically to the user's message below. ` +
-        `Match the exact language and script of the user's message (Hindi, Hinglish, English, etc.). ` +
-        `Never give a generic repeated template; answer what was actually said. Keep it concise (1-2 lines). [ctx:${uniqueTag}]\n\n` +
-        `User message: ${userText}`;
-    const reply = await callGeminiWithFallback(prompt, 0.9);
-    return (reply || buildDynamicFallbackReply(userText)).slice(0, 600);
+        `Talk like a normal, natural human friend on WhatsApp. ` +
+        `Reply directly to what the user said in the exact same language and style (Hindi, Hinglish, or English). ` +
+        `Keep it short (1-2 lines), casual, and natural — never robotic, never quote their text back, never use meta labels. [ctx:${uniqueTag}]\n\n` +
+        `User: ${userText}`;
+    const reply = await callGeminiWithFallback(prompt, 0.95);
+    return (reply || buildDynamicFallbackReply(userText)).slice(0, 500);
 }
 
 async function generateDirectAI(userPrompt) {
     const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const prompt =
-        `Answer the user's question directly, accurately, and in the same language as the question. ` +
-        `Do not repeat previous answers. [ctx:${uniqueTag}]\n\n` +
+        `Answer the user's question directly, clearly, and naturally in the same language as the question. ` +
+        `Do not repeat previous answers or add robotic filler. [ctx:${uniqueTag}]\n\n` +
         `Question: ${userPrompt}`;
-    const reply = await callGeminiWithFallback(prompt, 0.85);
+    const reply = await callGeminiWithFallback(prompt, 0.88);
     return (reply || buildDynamicFallbackReply(userPrompt)).slice(0, 1600);
 }
 
@@ -340,7 +334,7 @@ const AUTO_REPLY_BANNER = (enabled) => boxCard(
     [
         `*${g('THIS CHAT')}* : ${enabled ? `🟢 ${g('ACTIVE')}` : `🔴 ${g('DISABLED')}`}`,
         `*${g('REACTIONS')}* : ⚡ ${g('RANDOM EMOJI POOL')}`,
-        `*${g('AI ENGINE')}* : 🧠 ${g('DYNAMIC SMART REPLY')}`
+        `*${g('AI ENGINE')}* : 🧠 ${g('NATURAL CHAT REPLY')}`
     ]
 );
 
@@ -352,7 +346,7 @@ const BOTS_LIST_BANNER = (list) => boxCard(
 );
 
 const MENU_TEXT = () => boxCard(
-    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.2 🚩`,
+    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.3 🚩`,
     [
         `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
         `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
@@ -509,8 +503,8 @@ class Session {
             for (const [k, v] of this.processedMsgs) {
                 if (now - v > 90000) this.processedMsgs.delete(k);
             }
-            if (this.msgCache.size > 400) this.msgCache.clear();
-            if (this.sentByBotIds.size > 500) this.sentByBotIds.clear();
+            if (this.msgCache.size > 300) this.msgCache.clear();
+            if (this.sentByBotIds.size > 400) this.sentByBotIds.clear();
         }, 90000);
     }
 
@@ -631,10 +625,10 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Desktop"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false,
+                markOnlineOnConnect: true,
                 syncFullHistory: false,
                 msgRetryCounterCache: new Map(),
                 getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
@@ -674,14 +668,13 @@ class Session {
                         removeDirSafe(authDir);
                         return;
                     }
-                    if (!this.reconnectTimer) {
+                    if (!this.pairingBusy && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped) {
-                                this.pairingBusy = false;
+                            if (!this.stopped && !this.pairingBusy) {
                                 this.init();
                             }
-                        }, 2500);
+                        }, 3000);
                     }
                 }
             });
@@ -760,10 +753,10 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Desktop"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false,
+                markOnlineOnConnect: true,
                 syncFullHistory: false,
                 msgRetryCounterCache: new Map(),
                 getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
@@ -797,7 +790,7 @@ class Session {
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
                     }
-                    if (statusCode !== DisconnectReason.loggedOut && !this.reconnectTimer) {
+                    if (statusCode !== DisconnectReason.loggedOut && !this.pairingBusy && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped && !this.pairingBusy) this.init();
@@ -1588,10 +1581,10 @@ class Hub {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.2 ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.3 ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Browser Profile   : Ubuntu Chrome (Stable)
+  Browser Profile   : macOS Desktop (Pairing Ready)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
