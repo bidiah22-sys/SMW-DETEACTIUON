@@ -1,7 +1,7 @@
-// ╔══════════════════════════════════════════════╗
-// ║                  𝗦𝗠𝗪 𝗜𝗢𝗦                     ║
-// ║         Multi-Bot WhatsApp Manager           ║
-// ╚══════════════════════════════════════════════╝
+// ╔══════════════════════════════════════════════════════════════╗
+// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18                          ║
+// ║          Multi-Bot WhatsApp Manager & Loop Engine            ║
+// ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
     useMultiFileAuthState,
@@ -16,16 +16,21 @@ import fs from 'fs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
+// =========================================================================
+// PRIMARY BOT / OWNER NUMBER
+// =========================================================================
 const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 const PING_MINUTES = 4;
 
-const MIN_SAFE_DELAY_MS  = 1200;
-const DEFAULT_LOOP_MS    = 2200;
-const ANTI_BAN_JITTER_MS = 350;
+// LOOP & SAFETY TIMINGS (MS)
+const MIN_SAFE_DELAY_MS  = 500;
+const DEFAULT_LOOP_MS    = 1200;
+const ANTI_BAN_JITTER_MS = 120;
 
 const AUTO_READ_MESSAGES     = true;
-const AUTO_REPLY_COOLDOWN_MS = 1200;
+const AUTO_REPLY_COOLDOWN_MS = 600;
 const MAX_WARNS_BEFORE_KICK  = 3;
+// =========================================================================
 
 const RAW_EMOJI_STRING =
     "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃" +
@@ -70,7 +75,10 @@ const CONFIGURED_BOT_NUMBER = normalizeStrictPhone(BOT_NUMBER);
 const PRIMARY_OWNER_JID = CONFIGURED_BOT_NUMBER ? `${CONFIGURED_BOT_NUMBER}@s.whatsapp.net` : null;
 const ADMIN_NUMBERS = CONFIGURED_BOT_NUMBER ? [PRIMARY_OWNER_JID] : [];
 
-const PATH_AUTH   = (id) => `./sessions/smw_session_${id}`;
+// ─────────────────────────────────────────────
+//  STORAGE PATHS & CONFIG
+// ─────────────────────────────────────────────
+const PATH_AUTH   = (phone) => `./sessions/smw_session_${phone}`;
 const PATH_USERS  = './store/users.json';
 const PATH_TIMING = './store/timing.json';
 const PATH_PREFIX = './store/prefix.json';
@@ -122,14 +130,15 @@ if (!gcSettings.welcome) gcSettings.welcome = {};
 if (!gcSettings.warns) gcSettings.warns = {};
 
 let GLOBAL_EPOCH = 1;
-const GLOBAL_ISSUED_CODES = new Set();
-let latestPairingInfo = null;
+const PRINTED_LOG_OTPS = new Set();
 
+// Bot starts PAUSED until user sends !start / +start
 let runtimeState = readJson(PATH_STATE, {
-    botPaused: false,
+    botPaused: true,
     autoReplyChats: {}
 });
 
+runtimeState.botPaused = true;
 if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'object') {
     runtimeState.autoReplyChats = {};
 }
@@ -168,11 +177,14 @@ function getSafeDelay(inputMs) {
     return Math.max(MIN_SAFE_DELAY_MS, parsed) + jitter;
 }
 
+// ─────────────────────────────────────────────
+//  GEMINI AI ENGINE
+// ─────────────────────────────────────────────
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
-function withTimeout(promise, ms = 9000) {
+function withTimeout(promise, ms = 8000) {
     let timer;
     const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('Gemini timeout')), ms);
@@ -184,7 +196,7 @@ async function callGeminiWithFallback(promptText) {
     for (const modelName of GEMINI_MODELS) {
         try {
             const model = genAI.getGenerativeModel({ model: modelName });
-            const res = await withTimeout(model.generateContent(promptText), 9000);
+            const res = await withTimeout(model.generateContent(promptText), 8000);
             const text = res?.response?.text()?.trim();
             if (text) return text;
         } catch {}
@@ -203,9 +215,9 @@ function buildSmartFallbackReply(userText) {
 
 async function generateMatchingLanguageReply(userText) {
     const prompt =
-        `Act as a normal, friendly person chatting on WhatsApp. ` +
+        `Act as a sharp, friendly person chatting on WhatsApp. ` +
         `Reply in the exact same language and script as the user's message (Hindi, Hinglish, English, etc.). ` +
-        `Keep it natural, helpful, and brief (1-2 lines).\n\n` +
+        `Keep it natural, punchy, and brief (1-2 lines).\n\n` +
         `Message: ${userText}`;
     const reply = await callGeminiWithFallback(prompt);
     return (reply || buildSmartFallbackReply(userText)).slice(0, 600);
@@ -213,12 +225,15 @@ async function generateMatchingLanguageReply(userText) {
 
 async function generateDirectAI(userPrompt) {
     const prompt =
-        `Reply naturally and clearly in the same language as the user's question.\n\n` +
+        `Reply naturally, clearly, and powerfully in the same language as the user's question.\n\n` +
         `Question: ${userPrompt}`;
     const reply = await callGeminiWithFallback(prompt);
     return (reply || buildSmartFallbackReply(userPrompt)).slice(0, 1600);
 }
 
+// ─────────────────────────────────────────────
+//  KEEP-ALIVE SERVER
+// ─────────────────────────────────────────────
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -237,6 +252,9 @@ function startKeepAlive() {
     }, intervalMs);
 }
 
+// ─────────────────────────────────────────────
+//  EMOJI BANKS & FONT CONVERTER
+// ─────────────────────────────────────────────
 const SETS = {
     faces:   ['🚩','🔥','⚡','💀','👑','🎯','💣','🌀','🎭','🪬','🧿','💎','🗡️','🐉','☠️'],
     hearts:  ['🖤','❤️','🤍','🤎','🩷','🧡','💛','💚','💙','💜','🩵','🖤','❤️','🤍','🤎'],
@@ -269,31 +287,22 @@ ${rows.map(r => `│ ▸ ${r}`).join('\n')}
 💗 *${TAG}*`;
 
 const GRAND_START_BANNER = () => boxCard(
-    `⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗔𝗖𝗧𝗜𝗩𝗘 ⚡`,
+    `⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗔𝗥𝗧𝗘𝗗 ⚡`,
     [
-        `*${g('STATUS')}*      : 🟢 ${g('ONLINE & FULL POWER')}`,
+        `*${g('STATUS')}*      : 🟢 ${g('LIVE & FULL POWER')}`,
         `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
-        `*${g('GC ENGINE')}*   : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
+        `*${g('LOOP ENGINE')}* : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
         `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`,
-        `*${g('PAIRING')}*     : 📱 ${g('MULTI-BOT READY')}`
+        `*${g('PAIRING')}*     : 📜 ${g('LOGS SINGLE CODE MODE')}`
     ]
 );
 
 const KILL_ALL_BANNER = () => boxCard(
-    `🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`,
+    `🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗞𝗜𝗟𝗟𝗘𝗗 🛑`,
     [
-        `*${g('LOOPS & REPLY')}* : ⏸️ ${g('FROZEN')}`,
-        `*${g('SESSION')}*       : 🔗 ${g('CONNECTED & SAFE')}`,
-        `*${g('RESUME')}*        : ▶️ ${g('USE')} ${PREFIX}start`
-    ]
-);
-
-const CONNECTED_SUCCESS_BANNER = (phoneNum) => boxCard(
-    `✅ 𝗖𝗢𝗡𝗡𝗘𝗖𝗧𝗘𝗗 𝗦𝗨𝗖𝗖𝗘𝗦𝗦𝗙𝗨𝗟𝗟𝗬 ✅`,
-    [
-        `*${g('NUMBER')}* : +${phoneNum}`,
-        `*${g('STATE')}*  : 🟢 ${g('ONLINE & PAIRED')}`,
-        `*${g('BOT')}*    : ⚡ ${TAG}`
+        `*${g('LOOPS & REPLY')}* : ⏸️ ${g('STOPPED')}`,
+        `*${g('SESSION')}*       : 🔗 ${g('STILL LIVE & SAFE')}`,
+        `*${g('START AGAIN')}*   : ▶️ ${g('USE')} ${PREFIX}start`
     ]
 );
 
@@ -309,7 +318,7 @@ const AUTO_REPLY_BANNER = (enabled) => boxCard(
 const BOTS_LIST_BANNER = (list) => boxCard(
     `📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 (${list.length}) 📱`,
     list.map((s, idx) =>
-        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('CONNECTED')}` : `🟡 ${g('SAVED / READY')}`}`
+        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('ONLINE')}` : `🟡 ${g('STANDBY')}`}`
     )
 );
 
@@ -317,13 +326,13 @@ const MENU_TEXT = () => boxCard(
     `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18 🚩`,
     [
         `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
+        `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
         `🤖 ${PREFIX}autoreply on / off ➔ ${g('chat reply & reactions')}`,
         `🎯 ${PREFIX}targetmenu ➔ ${g('name change & text loops')}`,
         `🧠 ${PREFIX}ai [question] ➔ ${g('ai assistant')}`,
-        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}bots ➔ ${g('login & list')}`,
+        `📱 ${PREFIX}addbot / ${PREFIX}relink / ${PREFIX}bots ➔ ${g('logs code & list')}`,
         `👥 ${PREFIX}grpmenu ➔ ${g('group & gc controls')}`,
-        `🎮 ${PREFIX}games ➔ ${g('fun & tools')}`,
-        `👑 ${PREFIX}admin  |  ▶️ ${PREFIX}start  |  🛑 ${PREFIX}killall`
+        `🎮 ${PREFIX}games ➔ ${g('fun & tools')}`
     ]
 );
 
@@ -424,24 +433,24 @@ function hasLink(text) {
     return /(https?:\/\/|www\.|chat\.whatsapp\.com\/|t\.me\/|instagram\.com\/|youtube\.com\/|youtu\.be\/)/i.test(text || '');
 }
 
+// ═════════════════════════════════════════════
+//  SESSION MANAGER
+// ═════════════════════════════════════════════
 class Session {
-    constructor(id, phone, hub, requesterJid = null, freshAuth = false, isPrimary = false) {
+    constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false) {
         this.id = id;
         this.phone = normalizeStrictPhone(phone);
         this.hub = hub;
         this.requesterJid = requesterJid;
         this.freshAuth = freshAuth;
-        this.isPrimary = isPrimary;
+        this.logOtpOnce = logOtpOnce;
         this.socket = null;
         this.online = false;
         this.self = null;
         this.selfLid = null;
-        this.notifiedConnectedOnce = false;
-        this.awaitingPairingScan = false;
-        this.primaryOtpPrintedOnce = false;
+        this.otpPrinted = false;
+        this.pairingBusy = false;
 
-        this.pairingInProgress = false;
-        this.pairingDone = false;
         this.reconnectTimer = null;
         this.dedupeTimer = null;
         this.stopped = false;
@@ -492,7 +501,6 @@ class Session {
     async destroySession() {
         this.stopped = true;
         this.online = false;
-        this.awaitingPairingScan = false;
         this.clearTimers();
         this.stopAllLoops();
         try {
@@ -514,41 +522,35 @@ class Session {
         return true;
     }
 
-    async requestCodeWithRetry(sock) {
-        let lastError = null;
+    async requestSingleCodeFromSocket(sock) {
+        let lastErr = null;
         for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(1800 * attempt);
+                await delay(1500 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-                if (cleanCode && cleanCode.length >= 6) return cleanCode;
-                lastError = new Error('Invalid pairing code returned');
+                if (cleanCode && cleanCode.length >= 6) {
+                    return cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
+                }
+                lastErr = new Error('Empty pairing code');
             } catch (err) {
-                lastError = err;
+                lastErr = err;
             }
         }
-        throw lastError || new Error('Pairing failed');
+        throw lastErr || new Error('Pairing code failed');
     }
 
-    async markSessionConnectedAndNotify() {
-        this.online = true;
-        this.pairingDone = true;
-        this.awaitingPairingScan = false;
-        this.pairingInProgress = false;
-        if (this.socket?.user?.id) {
-            this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
-        }
-        if (this.socket?.user?.lid) {
-            this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
-        }
-        if (!this.notifiedConnectedOnce) {
-            this.notifiedConnectedOnce = true;
-            await this.hub.notifyNumberConnected(this.phone, this.requesterJid);
-        }
+    printCodeInLogsOnce(tagLabel, formattedCode) {
+        const key = `${tagLabel}__${this.phone}__${formattedCode}`;
+        if (PRINTED_LOG_OTPS.has(key)) return;
+        PRINTED_LOG_OTPS.add(key);
+        console.log(`\n╔══════════════════════════════════════════════╗`);
+        console.log(`║ ${tagLabel} (+${this.phone}) => ${formattedCode}`);
+        console.log(`╚══════════════════════════════════════════════╝\n`);
     }
 
-    // Sirf !addbot / !relink call karne par hi ek baar naya pairing code banega
-    async generateFreshPairingCodeNow() {
+    // Generates pairing code for added/relinked number and logs it cleanly in Render Logs
+    async pairAndLogCodeNow() {
         if (!this.phone) throw new Error('Invalid phone number');
 
         const authDir = this.getAuthDir();
@@ -563,10 +565,8 @@ class Session {
             this.socket = null;
         }
 
-        this.pairingDone = false;
-        this.awaitingPairingScan = true;
-        this.notifiedConnectedOnce = false;
-        this.pairingInProgress = true;
+        this.pairingBusy = true;
+        this.otpPrinted = true;
 
         try {
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -577,7 +577,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Desktop"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -592,68 +592,52 @@ class Session {
             sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped) return;
                 if (connection === "open") {
-                    await this.markSessionConnectedAndNotify();
-                    console.log(`[${this.id}] Paired & Connected Successfully: +${this.phone}`);
+                    this.online = true;
+                    if (this.socket?.user?.id) {
+                        this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
+                    }
+                    if (this.socket?.user?.lid) {
+                        this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
+                    }
+                    console.log(`[ONLINE] +${this.phone} logged in (Standby until !start)`);
                 } else if (connection === "close") {
                     this.online = false;
-                    const statusCode = lastDisconnect?.error?.output?.statusCode;
-                    if (statusCode === DisconnectReason.loggedOut) {
+                    if (this.stopped) return;
+                    const code = lastDisconnect?.error?.output?.statusCode;
+                    if (code === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
-                        this.pairingDone = false;
-                        this.awaitingPairingScan = false;
-                    } else if (!this.stopped && !this.reconnectTimer && !this.awaitingPairingScan) {
+                    } else if (!this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped) this.init();
-                        }, 3000);
+                        }, 2500);
                     }
                 }
             });
 
             sockSafeBind(this);
 
-            const cleanCode = await this.requestCodeWithRetry(sock);
-            const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
-            const codeKey = `ADDBOT__${this.phone}__${formatted}`;
-            if (!GLOBAL_ISSUED_CODES.has(codeKey)) {
-                GLOBAL_ISSUED_CODES.add(codeKey);
-            }
-            this.pairingDone = true;
-            latestPairingInfo = { phone: `+${this.phone}`, code: formatted, updatedAt: Date.now() };
-
-            console.log(`\n[BOT PAIR OTP] +${this.phone} => ${formatted}\n`);
-            return formatted;
+            const formattedCode = await this.requestSingleCodeFromSocket(sock);
+            this.printCodeInLogsOnce('ADDBOT CODE', formattedCode);
+            return formattedCode;
         } finally {
-            this.pairingInProgress = false;
+            this.pairingBusy = false;
         }
     }
 
-    async tryPrintPrimaryOtpOnce(sock) {
-        if (!this.isPrimary || this.stopped || this.online || this.primaryOtpPrintedOnce || this.pairingInProgress) {
-            return;
-        }
-        if (sock?.authState?.creds?.registered) {
-            return;
-        }
-        this.primaryOtpPrintedOnce = true;
-        this.pairingInProgress = true;
-        this.awaitingPairingScan = true;
+    async tryLogPrimaryCodeOnce(sock) {
+        if (!this.logOtpOnce || this.otpPrinted || this.pairingBusy || this.stopped || this.online) return;
+        if (sock?.authState?.creds?.registered) return;
+
+        this.otpPrinted = true;
+        this.pairingBusy = true;
         try {
-            const cleanCode = await this.requestCodeWithRetry(sock);
-            const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
-            const logKey = `PRIMARY__${this.phone}__${formatted}`;
-            if (!GLOBAL_ISSUED_CODES.has(logKey)) {
-                GLOBAL_ISSUED_CODES.add(logKey);
-                latestPairingInfo = { phone: `+${this.phone}`, code: formatted, updatedAt: Date.now() };
-                console.log(`\n================================================`);
-                console.log(`PRIMARY NUMBER OTP (+${this.phone}): ${formatted}`);
-                console.log(`================================================\n`);
-            }
+            const formattedCode = await this.requestSingleCodeFromSocket(sock);
+            this.printCodeInLogsOnce('PRIMARY CODE', formattedCode);
         } catch (err) {
-            this.awaitingPairingScan = false;
-            console.log(`[PRIMARY OTP ERR] +${this.phone}:`, err?.message || err);
+            console.log(`[PRIMARY LOG ERR] +${this.phone}:`, err?.message || err);
         } finally {
-            this.pairingInProgress = false;
+            this.pairingBusy = false;
         }
     }
 
@@ -678,7 +662,6 @@ class Session {
     async init() {
         try {
             if (!this.phone) return;
-            if (this.awaitingPairingScan && this.socket && !this.online) return;
 
             if (this.socket) {
                 try {
@@ -705,7 +688,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Desktop"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -716,32 +699,34 @@ class Session {
 
             this.socket.ev.on("creds.update", saveCreds);
 
-            if (this.isPrimary && !this.socket.authState?.creds?.registered && !this.primaryOtpPrintedOnce) {
-                this.tryPrintPrimaryOtpOnce(this.socket).catch(() => {});
+            if (this.logOtpOnce && !this.socket.authState?.creds?.registered && !this.otpPrinted) {
+                this.tryLogPrimaryCodeOnce(this.socket).catch(() => {});
             }
 
             this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped) return;
 
                 if (connection === "open") {
-                    await this.markSessionConnectedAndNotify();
-                    console.log(`[${this.id}] Connected: +${this.phone}`);
+                    this.online = true;
+                    if (this.socket?.user?.id) {
+                        this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
+                    }
+                    if (this.socket?.user?.lid) {
+                        this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
+                    }
+                    console.log(`[ONLINE] +${this.phone} logged in (Standby: ${runtimeState.botPaused ? 'PAUSED - send !start' : 'ACTIVE'})`);
                 } else if (connection === "close") {
                     this.online = false;
                     if (this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
-                        this.pairingDone = false;
-                        this.awaitingPairingScan = false;
-                        this.notifiedConnectedOnce = false;
                     }
-                    const shouldReconnect = statusCode !== DisconnectReason.loggedOut && !this.awaitingPairingScan;
-                    if (shouldReconnect && !this.reconnectTimer) {
+                    if (statusCode !== DisconnectReason.loggedOut && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped) this.init();
-                        }, 3000);
+                        }, 2500);
                     }
                 }
             });
@@ -774,25 +759,28 @@ class Session {
                 const sender = raw.key.fromMe
                     ? (this.self || this.selfLid || `${this.phone}@s.whatsapp.net`)
                     : (raw.key.participant || raw.participant || chat);
-                const cmd = body.toLowerCase();
+                const cmd = body.toLowerCase().trim();
 
                 const isDM = !isGroup;
                 const isFromMe = Boolean(raw.key.fromMe);
                 const isOwn = isFromMe || isOwner(sender, this.self, this.selfLid);
                 const allowed = isFromMe || isOwn || isSub(sender, chat);
 
+                // Start command activates the bot only when commanded
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
                     this.hub.resumeAllBots();
                     await this.sendInstant(chat, GRAND_START_BANNER());
                     continue;
                 }
 
+                // Killall stops all loops & auto-reply but keeps session live
                 if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
-                    this.hub.pauseAllBotsWithoutLogout();
+                    this.hub.pauseAllBotsKeepSessionAlive();
                     await this.sendInstant(chat, KILL_ALL_BANNER());
                     continue;
                 }
 
+                // While paused (standby), ignore all other commands/loops/replies until !start
                 if (runtimeState.botPaused) continue;
 
                 if (AUTO_READ_MESSAGES && !isFromMe) {
@@ -843,10 +831,16 @@ class Session {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +919876543210`]));
                             continue;
                         }
-                        await this.sendInstant(chat, boxCard(`⏳ 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : ${g('GENERATING ONCE')}`]));
                         try {
-                            const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
-                            await this.sendInstant(chat, boxCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('CODE')}*   : *${resPair.code}*`]));
+                            const code = await this.hub.addNumberAndPrintInLogs(cleanNum, chat);
+                            await this.sendInstant(
+                                chat,
+                                boxCard(`📜 𝗖𝗢𝗗𝗘 𝗦𝗘𝗡𝗧 𝗧𝗢 𝗟𝗢𝗚𝗦 📜`, [
+                                    `*${g('NUMBER')}* : +${cleanNum}`,
+                                    `*${g('CODE')}*   : *${code}*`,
+                                    `*${g('STATUS')}* : ${g('PRINTED IN RENDER LOGS')}`
+                                ])
+                            );
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
                         }
@@ -860,10 +854,16 @@ class Session {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}relink +919876543210`]));
                             continue;
                         }
-                        await this.sendInstant(chat, boxCard(`⏳ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : ${g('GENERATING ONCE')}`]));
                         try {
-                            const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
-                            await this.sendInstant(chat, boxCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('CODE')}*   : *${resPair.code}*`]));
+                            const code = await this.hub.addNumberAndPrintInLogs(cleanNum, chat);
+                            await this.sendInstant(
+                                chat,
+                                boxCard(`📜 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 𝗜𝗡 𝗟𝗢𝗚𝗦 📜`, [
+                                    `*${g('NUMBER')}* : +${cleanNum}`,
+                                    `*${g('CODE')}*   : *${code}*`,
+                                    `*${g('STATUS')}* : ${g('PRINTED IN RENDER LOGS')}`
+                                ])
+                            );
                         } catch (err) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
                         }
@@ -1132,7 +1132,7 @@ class Session {
                                 const tagsText = slice.map(j => `@${j.split('@')[0]}`).join(' ');
                                 await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${customMsg}`, tagsText]), slice);
                                 if (i + chunkSize < members.length) {
-                                    await delay(1200);
+                                    await delay(800);
                                 }
                             }
                         } catch {
@@ -1241,6 +1241,7 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
+                // Auto-reply + random reaction only when bot is started and chat autoreply is ON
                 if (
                     !runtimeState.botPaused &&
                     isChatAutoReplyOn(this.phone, chat) &&
@@ -1316,7 +1317,7 @@ class Session {
                             stateObj.epoch === nextEpoch
                         ) {
                             if (!this.socket) {
-                                await delay(1200);
+                                await delay(800);
                                 continue;
                             }
                             const emo1 = emojis[idx % emojis.length];
@@ -1326,7 +1327,7 @@ class Session {
                                 await this.socket.groupUpdateSubject(chat, `${emo1} ⚡ ${txt} ⚡ ${emo2}`);
                             } catch {}
 
-                            const step = 200;
+                            const step = 120;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
                                 if (
@@ -1367,7 +1368,7 @@ class Session {
                             loopObj.epoch === nextEpoch
                         ) {
                             if (!this.socket) {
-                                await delay(1200);
+                                await delay(800);
                                 continue;
                             }
                             try {
@@ -1375,7 +1376,7 @@ class Session {
                                 if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
                             } catch {}
 
-                            const step = 200;
+                            const step = 120;
                             let elapsed = 0;
                             while (elapsed < safeDelay) {
                                 if (
@@ -1402,7 +1403,7 @@ class Session {
         this.sendQueue = this.sendQueue
             .then(async () => {
                 await taskFn();
-                await delay(140 + Math.floor(Math.random() * 110));
+                await delay(80 + Math.floor(Math.random() * 60));
             })
             .catch(() => {});
         return this.sendQueue;
@@ -1415,13 +1416,6 @@ class Session {
             const sent = await this.socket.sendMessage(jid, payload);
             if (sent?.key?.id) this.sentByBotIds.add(sent.key.id);
         } catch {}
-    }
-
-    async send(jid, text, mentions = undefined) {
-        if (this.stopped || !this.socket) return;
-        await this.enqueueSend(async () => {
-            await this.sendInstant(jid, text, mentions);
-        });
     }
 
     async sendQuoted(jid, text, quotedMsg) {
@@ -1453,27 +1447,6 @@ class Hub {
         this.counter = 1;
     }
 
-    getPrimarySession() {
-        if (CONFIGURED_BOT_NUMBER) {
-            const mainSess = [...this.sessions.values()].find(
-                s => s.phone === CONFIGURED_BOT_NUMBER && !s.stopped && s.socket
-            );
-            if (mainSess) return mainSess;
-        }
-        return [...this.sessions.values()].find(s => !s.stopped && s.socket) || null;
-    }
-
-    async notifyNumberConnected(connectedPhone, requesterJid = null) {
-        const msg = CONNECTED_SUCCESS_BANNER(connectedPhone);
-        const primary = this.getPrimarySession();
-        if (primary && PRIMARY_OWNER_JID) {
-            await primary.sendInstant(PRIMARY_OWNER_JID, msg);
-        }
-        if (requesterJid && primary && requesterJid !== PRIMARY_OWNER_JID) {
-            await primary.sendInstant(requesterJid, msg);
-        }
-    }
-
     loadSavedNumbers() {
         const saved = readJson(PATH_BOTS, { numbers: [] });
         const list = Array.isArray(saved.numbers) ? saved.numbers : [];
@@ -1488,7 +1461,7 @@ class Hub {
         writeJson(PATH_BOTS, { numbers: [...new Set(numbers)] });
     }
 
-    async pairAndGetCode(phone, requesterJid = null, forceFresh = true) {
+    async addNumberAndPrintInLogs(phone, requesterJid = null) {
         const clean = normalizeStrictPhone(phone);
         if (!clean) throw new Error('Invalid phone number');
 
@@ -1499,17 +1472,16 @@ class Hub {
         }
 
         const id = String(this.counter++);
-        const session = new Session(id, clean, this, requesterJid, forceFresh, false);
+        const session = new Session(id, clean, this, requesterJid, true, false);
         this.sessions.set(id, session);
 
         const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
         this.saveNumbers(allNums);
 
-        const code = await session.generateFreshPairingCodeNow();
-        return { phone: clean, code };
+        return await session.pairAndLogCodeNow();
     }
 
-    pauseAllBotsWithoutLogout() {
+    pauseAllBotsKeepSessionAlive() {
         GLOBAL_EPOCH += 1;
         runtimeState.botPaused = true;
         runtimeState.autoReplyChats = {};
@@ -1536,7 +1508,7 @@ class Hub {
             const session = new Session(id, num, this, null, false, isPrimary);
             this.sessions.set(id, session);
             await session.init();
-            await delay(1200);
+            await delay(1000);
         }
     }
 }
@@ -1545,9 +1517,10 @@ console.log(`
 ◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18  ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
+  Browser Profile   : macOS Desktop (Stable)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
+  Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
-  Safe Delay Floor  : ${MIN_SAFE_DELAY_MS}ms
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `);
 
