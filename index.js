@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║      𝗦𝗠𝗪 𝗜𝗢𝗦 — MASTER TRANSFER + FULL AI RENDER ENGINE    ║
-// ║  Primary Master Control • Instant Access Transfer • Live AI  ║
+// ║   𝗦𝗠𝗪 𝗜𝗢𝗦 — LID + PHONE UNIVERSAL COMMAND & TRANSFER ENGINE  ║
+// ║  Works in Every DM & Group • Real Access Transfer • Full AI  ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -40,10 +40,11 @@ const PATH_BOTS      = './store/bots.json';
 const PATH_STATE     = './store/state.json';
 const PATH_GC        = './store/gc_settings.json';
 const PATH_ACCESS    = './store/access.json';
+const PATH_ID_MAP    = './store/id_map.json';
 // =========================================================================
 
 // =========================================================================
-// 2. STORAGE, SINGLE MASTER & TRANSFERABLE ACCESS CONTROL
+// 2. STORAGE, LID/PHONE RESOLVER & REAL ACCESS TRANSFER
 // =========================================================================
 try {
     fs.mkdirSync('./store', { recursive: true });
@@ -102,12 +103,16 @@ let timingMap  = readJson(PATH_TIMING, {
 let prefixData = readJson(PATH_PREFIX, { prefix: '!' });
 let PREFIX     = prefixData.prefix || '!';
 let gcSettings = readJson(PATH_GC, { antiLink: {}, welcome: {}, warns: {} });
-let accessData = readJson(PATH_ACCESS, { allowedUsers: [] });
+let accessData = readJson(PATH_ACCESS, { allowedNums: [], allowedLids: [] });
+let idMapData  = readJson(PATH_ID_MAP, { phoneToLid: {}, lidToPhone: {} });
 
 if (!gcSettings.antiLink) gcSettings.antiLink = {};
 if (!gcSettings.welcome) gcSettings.welcome = {};
 if (!gcSettings.warns) gcSettings.warns = {};
-if (!Array.isArray(accessData.allowedUsers)) accessData.allowedUsers = [];
+if (!Array.isArray(accessData.allowedNums)) accessData.allowedNums = [];
+if (!Array.isArray(accessData.allowedLids)) accessData.allowedLids = [];
+if (!idMapData.phoneToLid) idMapData.phoneToLid = {};
+if (!idMapData.lidToPhone) idMapData.lidToPhone = {};
 
 let GLOBAL_EPOCH = 1;
 let cachedBaileysVersion = null;
@@ -125,6 +130,7 @@ if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'obje
 const saveRuntimeState = () => writeJson(PATH_STATE, runtimeState);
 const saveGcSettings   = () => writeJson(PATH_GC, gcSettings);
 const saveAccessData   = () => writeJson(PATH_ACCESS, accessData);
+const saveIdMapData    = () => writeJson(PATH_ID_MAP, idMapData);
 
 function getSafeDelay(inputMs) {
     const parsed = Number(inputMs);
@@ -145,28 +151,86 @@ function setChatAutoReply(sessionPhone, chatJid, enabled) {
     saveRuntimeState();
 }
 
-function extractNumFromJid(j) {
+function extractRawId(j) {
     if (!j) return '';
     return String(j).split('@')[0].split(':')[0].replace(/\D/g, '');
 }
 
+function extractNumFromJid(j) {
+    if (!j) return '';
+    const str = String(j);
+    const raw = extractRawId(str);
+    if (str.endsWith('@lid') && idMapData.lidToPhone[raw]) {
+        return idMapData.lidToPhone[raw];
+    }
+    return raw;
+}
+
+function linkPhoneAndLid(phoneVal, lidVal) {
+    const p = normalizeStrictPhone(phoneVal);
+    const l = String(lidVal || '').replace(/\D/g, '');
+    if (!p && !l) return;
+    let changed = false;
+    if (p && l) {
+        if (idMapData.phoneToLid[p] !== l) {
+            idMapData.phoneToLid[p] = l;
+            changed = true;
+        }
+        if (idMapData.lidToPhone[l] !== p) {
+            idMapData.lidToPhone[l] = p;
+            changed = true;
+        }
+        if (accessData.allowedNums.includes(p) && !accessData.allowedLids.includes(l)) {
+            accessData.allowedLids.push(l);
+            changed = true;
+        }
+        if (accessData.allowedLids.includes(l) && !accessData.allowedNums.includes(p)) {
+            accessData.allowedNums.push(p);
+            changed = true;
+        }
+    }
+    if (changed) {
+        saveIdMapData();
+        saveAccessData();
+    }
+}
+
+function getAllKnownIdsForSender(senderJid) {
+    const raw = extractRawId(senderJid);
+    const resolvedPhone = extractNumFromJid(senderJid);
+    const ids = new Set();
+    if (raw) ids.add(raw);
+    if (resolvedPhone) ids.add(resolvedPhone);
+    if (resolvedPhone && idMapData.phoneToLid[resolvedPhone]) {
+        ids.add(idMapData.phoneToLid[resolvedPhone]);
+    }
+    if (raw && idMapData.lidToPhone[raw]) {
+        ids.add(idMapData.lidToPhone[raw]);
+    }
+    return ids;
+}
+
 const isSingleOwner = (senderJid, sessionSelf = null, sessionLid = null, isFromMe = false) => {
     if (isFromMe) return true;
-    const senderNum = extractNumFromJid(senderJid);
-    if (!senderNum) return false;
-    if (PRIMARY_OWNER_NUM && senderNum === PRIMARY_OWNER_NUM) return true;
-    const selfNum = extractNumFromJid(sessionSelf);
-    const lidNum = extractNumFromJid(sessionLid);
-    if (PRIMARY_OWNER_NUM && selfNum === PRIMARY_OWNER_NUM && senderNum === selfNum) return true;
-    if (PRIMARY_OWNER_NUM && lidNum && senderNum === lidNum && selfNum === PRIMARY_OWNER_NUM) return true;
+    const ids = getAllKnownIdsForSender(senderJid);
+    const selfNum = extractRawId(sessionSelf);
+    const lidNum = extractRawId(sessionLid);
+
+    if (PRIMARY_OWNER_NUM && ids.has(PRIMARY_OWNER_NUM)) return true;
+    if (selfNum && ids.has(selfNum)) return true;
+    if (lidNum && ids.has(lidNum)) return true;
     return false;
 };
 
 function isAllowedTransferUser(senderJid) {
     if (runtimeState.botPaused) return false;
-    const senderNum = extractNumFromJid(senderJid);
-    if (!senderNum) return false;
-    return accessData.allowedUsers.some(u => extractNumFromJid(u) === senderNum);
+    const ids = getAllKnownIdsForSender(senderJid);
+    for (const id of ids) {
+        if (accessData.allowedNums.includes(id) || accessData.allowedLids.includes(id)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function canExecuteBotCommand(senderJid, sessionSelf = null, sessionLid = null, isFromMe = false) {
@@ -174,27 +238,56 @@ function canExecuteBotCommand(senderJid, sessionSelf = null, sessionLid = null, 
     return isAllowedTransferUser(senderJid);
 }
 
-function grantFullAccess(targetNum) {
-    const clean = normalizeStrictPhone(targetNum);
-    if (!clean) return '';
-    const jid = `${clean}@s.whatsapp.net`;
-    if (!accessData.allowedUsers.some(u => extractNumFromJid(u) === clean)) {
-        accessData.allowedUsers.push(jid);
-        saveAccessData();
+function grantFullAccess(rawTarget) {
+    const str = String(rawTarget || '').trim();
+    const rawDigits = extractRawId(str);
+    const phone = normalizeStrictPhone(str);
+
+    if (!phone && !rawDigits) return null;
+
+    const targetId = phone || rawDigits;
+    if (phone && !accessData.allowedNums.includes(phone)) {
+        accessData.allowedNums.push(phone);
     }
-    return clean;
+    if (str.endsWith('@lid') && rawDigits && !accessData.allowedLids.includes(rawDigits)) {
+        accessData.allowedLids.push(rawDigits);
+    }
+    if (phone && idMapData.phoneToLid[phone] && !accessData.allowedLids.includes(idMapData.phoneToLid[phone])) {
+        accessData.allowedLids.push(idMapData.phoneToLid[phone]);
+    }
+    if (rawDigits && idMapData.lidToPhone[rawDigits]) {
+        const linkedPhone = idMapData.lidToPhone[rawDigits];
+        if (!accessData.allowedNums.includes(linkedPhone)) accessData.allowedNums.push(linkedPhone);
+    }
+    saveAccessData();
+    return targetId;
 }
 
-function revokeFullAccess(targetNum) {
-    const clean = normalizeStrictPhone(targetNum);
-    if (!clean) return false;
-    const before = accessData.allowedUsers.length;
-    accessData.allowedUsers = accessData.allowedUsers.filter(u => extractNumFromJid(u) !== clean);
-    if (accessData.allowedUsers.length !== before) {
-        saveAccessData();
-        return true;
+function revokeFullAccess(rawTarget) {
+    const str = String(rawTarget || '').trim();
+    const rawDigits = extractRawId(str);
+    const phone = normalizeStrictPhone(str);
+    if (!phone && !rawDigits) return { id: '', removed: false };
+
+    const idsToRemove = new Set();
+    if (phone) {
+        idsToRemove.add(phone);
+        if (idMapData.phoneToLid[phone]) idsToRemove.add(idMapData.phoneToLid[phone]);
     }
-    return false;
+    if (rawDigits) {
+        idsToRemove.add(rawDigits);
+        if (idMapData.lidToPhone[rawDigits]) idsToRemove.add(idMapData.lidToPhone[rawDigits]);
+    }
+
+    const beforeNums = accessData.allowedNums.length;
+    const beforeLids = accessData.allowedLids.length;
+
+    accessData.allowedNums = accessData.allowedNums.filter(n => !idsToRemove.has(n));
+    accessData.allowedLids = accessData.allowedLids.filter(l => !idsToRemove.has(l));
+
+    const removed = (accessData.allowedNums.length !== beforeNums) || (accessData.allowedLids.length !== beforeLids);
+    if (removed) saveAccessData();
+    return { id: phone || rawDigits, removed };
 }
 // =========================================================================
 
@@ -271,15 +364,15 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
     ]);
 };
 
-const ACCESS_GRANTED_CARD = (targetNum) => boxCard(`⚡ 𝗔𝗖𝗖𝗘𝗦𝗦 𝗧𝗥𝗔𝗡𝗦𝗙𝗘𝗥𝗥𝗘𝗗 ⚡`, [
-    `*${g('TARGET')}* : +${targetNum}`,
+const ACCESS_GRANTED_CARD = (targetId) => boxCard(`⚡ 𝗔𝗖𝗖𝗘𝗦𝗦 𝗧𝗥𝗔𝗡𝗦𝗙𝗘𝗥𝗥𝗘𝗗 ⚡`, [
+    `*${g('TARGET')}* : +${targetId}`,
     `*${g('ACCESS')}* : 🔥 ${g('FULL BOT FEATURES UNLOCKED')}`,
-    `*${g('LINKED')}* : 🔗 ${g('ACTIVE WHILE MASTER IS LIVE')}`,
-    `*${g('REVOKE')}* : 🛑 ${PREFIX}revoke +${targetNum}`
+    `*${g('SCOPE')}*  : 🌐 ${g('ALL DMs & GROUPS ACTIVE')}`,
+    `*${g('REVOKE')}* : 🛑 ${PREFIX}revoke +${targetId}`
 ]);
 
-const ACCESS_REVOKED_CARD = (targetNum, removed) => boxCard(`🛑 𝗔𝗖𝗖𝗘𝗦𝗦 𝗥𝗘𝗩𝗢𝗞𝗘𝗗 🛑`, [
-    `*${g('TARGET')}* : +${targetNum}`,
+const ACCESS_REVOKED_CARD = (targetId, removed) => boxCard(`🛑 𝗔𝗖𝗖𝗘𝗦𝗦 𝗥𝗘𝗩𝗢𝗞𝗘𝗗 🛑`, [
+    `*${g('TARGET')}* : +${targetId}`,
     `*${g('STATUS')}* : ${removed ? `🔴 ${g('ALL FEATURES STOPPED')}` : `⚠️ ${g('USER NOT FOUND')}`}`
 ]);
 
@@ -455,6 +548,8 @@ function getTargetUsers(raw, content, argsText) {
     if (participant) return [participant];
     const num = normalizeStrictPhone(argsText);
     if (num) return [`${num}@s.whatsapp.net`];
+    const rawDigits = extractRawId(argsText);
+    if (rawDigits) return [`${rawDigits}@s.whatsapp.net`];
     return [];
 }
 
@@ -682,8 +777,15 @@ class Session {
                 this.pairingBusy = false;
                 this.sessionReady = true;
                 this.reconnectAttempts = 0;
-                if (sock.user?.id) this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
-                if (sock.user?.lid) this.selfLid = sock.user.lid.split(':')[0] + '@lid';
+                if (sock.user?.id) {
+                    const sNum = extractRawId(sock.user.id);
+                    this.self = `${sNum}@s.whatsapp.net`;
+                    if (sock.user?.lid) {
+                        const lNum = extractRawId(sock.user.lid);
+                        this.selfLid = `${lNum}@lid`;
+                        linkPhoneAndLid(sNum, lNum);
+                    }
+                }
                 console.log(`[RENDER ONLINE] +${this.phone} linked & ready`);
                 if (this.requesterJid) {
                     await this.sendInstant(this.requesterJid, boxCard(`✅ 𝗕𝗢𝗧 𝗟𝗜𝗡𝗞𝗘𝗗 ✅`, [
@@ -802,7 +904,7 @@ class Session {
         if (ev.action === 'add' && gcSettings.welcome?.[groupJid]) {
             const participants = ev.participants || [];
             const mentions = participants.filter(Boolean);
-            const names = mentions.map(j => `@${j.split('@')[0]}`).join(', ');
+            const names = mentions.map(j => `@${extractRawId(j)}`).join(', ');
             if (names) {
                 await this.sendInstant(groupJid, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 👋`, [`*${g('MEMBERS')}* : ${names}`]), mentions);
             }
@@ -827,24 +929,30 @@ class Session {
                 if (!body) continue;
 
                 const isGroup = chat.endsWith('@g.us');
-                const sender = raw.key.fromMe
+                const isFromMe = Boolean(raw.key.fromMe);
+                const sender = isFromMe
                     ? (this.self || this.selfLid || `${this.phone}@s.whatsapp.net`)
                     : (raw.key.participant || raw.participant || chat);
-                const cmd = body.toLowerCase().trim();
 
-                const isFromMe = Boolean(raw.key.fromMe);
+                if (isFromMe && !isGroup && chat.endsWith('@s.whatsapp.net')) {
+                    const chatDigits = extractRawId(chat);
+                    if (chatDigits && PRIMARY_OWNER_NUM && chatDigits !== PRIMARY_OWNER_NUM) {
+                        const myLid = extractRawId(this.selfLid);
+                        if (myLid) linkPhoneAndLid(PRIMARY_OWNER_NUM, myLid);
+                    }
+                }
+
+                const cmd = body.toLowerCase().trim();
                 const isMaster = isSingleOwner(sender, this.self, this.selfLid, isFromMe);
                 const allowed = canExecuteBotCommand(sender, this.self, this.selfLid, isFromMe);
 
                 if (isMaster && (cmd === `${PREFIX}start` || cmd === '+start')) {
-                    console.log(`[RENDER CMD] ${cmd} from master ${sender} in ${chat}`);
                     this.hub.resumeAllBots();
                     await this.sendInstant(chat, GRAND_START_BANNER());
                     continue;
                 }
 
                 if (isMaster && (cmd === `${PREFIX}killall` || cmd === '-all')) {
-                    console.log(`[RENDER CMD] ${cmd} from master ${sender} in ${chat}`);
                     this.hub.pauseAllBotsKeepSessionAlive();
                     await this.sendInstant(chat, KILL_ALL_BANNER());
                     continue;
@@ -853,34 +961,33 @@ class Session {
                 if (isMaster && (cmd === `${PREFIX}allow` || cmd.startsWith(`${PREFIX}allow `))) {
                     const argPart = body.slice(PREFIX.length + 5).trim();
                     const targets = getTargetUsers(raw, content, argPart);
-                    const rawTarget = targets[0] ? extractNumFromJid(targets[0]) : argPart;
-                    const grantedNum = grantFullAccess(rawTarget);
-                    if (!grantedNum) {
+                    const rawTarget = targets[0] || argPart;
+                    const grantedId = grantFullAccess(rawTarget);
+                    if (!grantedId) {
                         await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}allow +919876543210`]));
                         continue;
                     }
-                    await this.sendInstant(chat, ACCESS_GRANTED_CARD(grantedNum));
+                    await this.sendInstant(chat, ACCESS_GRANTED_CARD(grantedId));
                     continue;
                 }
 
                 if (isMaster && (cmd === `${PREFIX}revoke` || cmd.startsWith(`${PREFIX}revoke `))) {
                     const argPart = body.slice(PREFIX.length + 6).trim();
                     const targets = getTargetUsers(raw, content, argPart);
-                    const rawTarget = targets[0] ? extractNumFromJid(targets[0]) : argPart;
-                    const cleanTarget = normalizeStrictPhone(rawTarget);
-                    if (!cleanTarget) {
+                    const rawTarget = targets[0] || argPart;
+                    const { id: targetId, removed } = revokeFullAccess(rawTarget);
+                    if (!targetId) {
                         await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}revoke +919876543210`]));
                         continue;
                     }
-                    const removed = revokeFullAccess(cleanTarget);
-                    await this.sendInstant(chat, ACCESS_REVOKED_CARD(cleanTarget, removed));
+                    await this.sendInstant(chat, ACCESS_REVOKED_CARD(targetId, removed));
                     continue;
                 }
 
                 if (isMaster && (cmd === `${PREFIX}accesslist` || cmd === `${PREFIX}sharedlist`)) {
-                    const nums = accessData.allowedUsers.map(u => `+${extractNumFromJid(u)}`).filter(x => x !== '+');
-                    await this.sendInstant(chat, boxCard(`🔑 𝗦𝗛𝗔𝗥𝗘𝗗 𝗔𝗖𝗖𝗘𝗦𝗦 (${nums.length}) 🔑`,
-                        nums.length ? nums.map((n, i) => `*${i + 1}.* ${n} ➔ 🟢 ${g('FULL ACCESS')}`) : [`*${g('LIST')}* : ${g('NO SHARED NUMBERS')}`]
+                    const allIds = [...new Set([...accessData.allowedNums, ...accessData.allowedLids])];
+                    await this.sendInstant(chat, boxCard(`🔑 𝗦𝗛𝗔𝗥𝗘𝗗 𝗔𝗖𝗖𝗘𝗦𝗦 (${allIds.length}) 🔑`,
+                        allIds.length ? allIds.map((id, i) => `*${i + 1}.* +${id} ➔ 🟢 ${g('FULL ACCESS')}`) : [`*${g('LIST')}* : ${g('NO SHARED NUMBERS')}`]
                     ));
                     continue;
                 }
@@ -895,7 +1002,7 @@ class Session {
                     try {
                         await this.socket.sendMessage(chat, { delete: raw.key });
                         await this.sendInstant(chat, boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [
-                            `*${g('USER')}*   : @${sender.split('@')[0]}`,
+                            `*${g('USER')}*   : @${extractRawId(sender)}`,
                             `*${g('ACTION')}* : ${g('LINK DELETED')}`
                         ]), [sender]);
                     } catch {}
@@ -907,9 +1014,10 @@ class Session {
                 if (allowed && isCommandText) {
                     if (cmd === `${PREFIX}ping` || cmd === '+ping') {
                         const activeCnt = [...this.hub.sessions.values()].filter(s => !s.stopped && s.online).length;
+                        const sharedCnt = new Set([...accessData.allowedNums, ...accessData.allowedLids]).size;
                         await this.sendInstant(chat, boxCard(`⚡ 𝗦𝗠𝗪 𝗣𝗜𝗡𝗚 ⚡`, [
                             `*${g('ONLINE')}* : ${activeCnt} ${g('SESSIONS')}`,
-                            `*${g('SHARED')}* : ${accessData.allowedUsers.length} ${g('USERS')}`,
+                            `*${g('SHARED')}* : ${sharedCnt} ${g('USERS')}`,
                             `*${g('UPTIME')}* : ${Math.floor((Date.now() - BOOT_TS) / 1000)}s`
                         ]));
                         continue;
@@ -963,7 +1071,6 @@ class Session {
                     if (isMaster && (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ') || cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink '))) {
                         const rawNum = body.replace(new RegExp(`^(\\${PREFIX}(addbot|relink)|\\+(pair|relink))\\s+`, 'i'), '').trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
-                        console.log(`[RENDER ADDBOT CMD] raw="${rawNum}" clean="${cleanNum || 'INVALID'}" chat=${chat}`);
                         if (!cleanNum) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +9647882064284`]));
                             continue;
@@ -1048,7 +1155,7 @@ class Session {
                         if (isUnwarn) {
                             delete gcSettings.warns[chat][target];
                             saveGcSettings();
-                            await this.sendInstant(chat, boxCard(`✅ 𝗪𝗔𝗥𝗡𝗦 𝗖𝗟𝗘𝗔𝗥𝗘𝗗 ✅`, [`*${g('USER')}* : @${target.split('@')[0]}`]), [target]);
+                            await this.sendInstant(chat, boxCard(`✅ 𝗪𝗔𝗥𝗡𝗦 𝗖𝗟𝗘𝗔𝗥𝗘𝗗 ✅`, [`*${g('USER')}* : @${extractRawId(target)}`]), [target]);
                         } else {
                             const nextCount = (gcSettings.warns[chat][target] || 0) + 1;
                             gcSettings.warns[chat][target] = nextCount;
@@ -1058,12 +1165,12 @@ class Session {
                                 saveGcSettings();
                                 try {
                                     await this.socket.groupParticipantsUpdate(chat, [target], 'remove');
-                                    await this.sendInstant(chat, boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}* : @${target.split('@')[0]}`]), [target]);
+                                    await this.sendInstant(chat, boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}* : @${extractRawId(target)}`]), [target]);
                                 } catch {
-                                    await this.sendInstant(chat, boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${target.split('@')[0]}`]), [target]);
+                                    await this.sendInstant(chat, boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${extractRawId(target)}`]), [target]);
                                 }
                             } else {
-                                await this.sendInstant(chat, boxCard(`⚠️ 𝗪𝗔𝗥𝗡𝗜𝗡𝗚 ⚠️`, [`*${g('USER')}* : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${nextCount}/${MAX_WARNS_BEFORE_KICK}`]), [target]);
+                                await this.sendInstant(chat, boxCard(`⚠️ 𝗪𝗔𝗥𝗡𝗜𝗡𝗚 ⚠️`, [`*${g('USER')}* : @${extractRawId(target)}`, `*${g('WARNS')}* : ${nextCount}/${MAX_WARNS_BEFORE_KICK}`]), [target]);
                             }
                         }
                         continue;
@@ -1101,7 +1208,7 @@ class Session {
                             const adminList = (meta.participants || []).filter(p => p.admin === 'admin' || p.admin === 'superadmin');
                             const mentions = adminList.map(p => p.id);
                             if (cmd === `${PREFIX}admins`) {
-                                await this.sendInstant(chat, boxCard(`👑 𝗔𝗗𝗠𝗜𝗡𝗦 (${mentions.length}) 👑`, mentions.length ? mentions.map(j => `@${j.split('@')[0]}`) : [g('NONE')]), mentions);
+                                await this.sendInstant(chat, boxCard(`👑 𝗔𝗗𝗠𝗜𝗡𝗦 (${mentions.length}) 👑`, mentions.length ? mentions.map(j => `@${extractRawId(j)}`) : [g('NONE')]), mentions);
                             } else {
                                 await this.sendInstant(chat, boxCard(`📌 𝗚𝗥𝗢𝗨𝗣 𝗜𝗡𝗙𝗢 📌`, [
                                     `*${g('NAME')}*    : ${meta.subject}`,
@@ -1122,7 +1229,7 @@ class Session {
                             for (let i = 0; i < members.length; i += 20) {
                                 if (runtimeState.botPaused || this.stopped) break;
                                 const slice = members.slice(i, i + 20);
-                                await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${note}`, slice.map(j => `@${j.split('@')[0]}`).join(' ')]), slice);
+                                await this.sendInstant(chat, boxCard(`📣 𝗧𝗔𝗚 𝗔𝗟𝗟 📣`, [`*${g('NOTE')}* : ${note}`, slice.map(j => `@${extractRawId(j)}`).join(' ')]), slice);
                                 if (i + 20 < members.length) await delay(650);
                             }
                         } catch {}
@@ -1216,7 +1323,7 @@ class Session {
                         }
                     });
 
-                    const replyKey = `${String(chat).trim()}__${sender}`;
+                    const replyKey = `${String(chat).trim()}__${extractRawId(sender)}`;
                     const lastTs = this.lastAutoReplyAt.get(replyKey) || 0;
                     if (Date.now() - lastTs >= AUTO_REPLY_COOLDOWN_MS) {
                         this.lastAutoReplyAt.set(replyKey, Date.now());
@@ -1464,10 +1571,10 @@ function startKeepAlive() {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — MASTER TRANSFER + FULL AI ENGINE ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — LID + PHONE UNIVERSAL ENGINE ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Master    : ${PRIMARY_OWNER_NUM ? `+${PRIMARY_OWNER_NUM}` : 'NOT SET'}
-  Shared Users      : ${accessData.allowedUsers.length} ACTIVE
+  Shared Users      : ${new Set([...accessData.allowedNums, ...accessData.allowedLids]).size} ACTIVE
   Initial State     : STANDBY (Send !start)
   Port              : ${PORT}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
