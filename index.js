@@ -165,28 +165,22 @@ function saveGcSettings() {
 
 function normalizeChatKey(chatJid) {
     if (!chatJid) return '';
-    return String(chatJid).split(':')[0].trim();
+    return String(chatJid).trim();
 }
 
 function isChatAutoReplyOn(sessionPhone, chatJid) {
     if (runtimeState.botPaused) return false;
     const cleanChat = normalizeChatKey(chatJid);
-    return Boolean(
-        runtimeState.autoReplyChats[`${sessionPhone}::${cleanChat}`] ||
-        runtimeState.autoReplyChats[`${sessionPhone}::${chatJid}`]
-    );
+    return Boolean(runtimeState.autoReplyChats[`${sessionPhone}::${cleanChat}`]);
 }
 
 function setChatAutoReply(sessionPhone, chatJid, enabled) {
     const cleanChat = normalizeChatKey(chatJid);
-    const key1 = `${sessionPhone}::${cleanChat}`;
-    const key2 = `${sessionPhone}::${chatJid}`;
+    const key = `${sessionPhone}::${cleanChat}`;
     if (enabled) {
-        runtimeState.autoReplyChats[key1] = true;
-        runtimeState.autoReplyChats[key2] = true;
+        runtimeState.autoReplyChats[key] = true;
     } else {
-        delete runtimeState.autoReplyChats[key1];
-        delete runtimeState.autoReplyChats[key2];
+        delete runtimeState.autoReplyChats[key];
     }
     saveRuntimeState();
 }
@@ -317,20 +311,20 @@ ${rows.map(r => `▸ ${r}`).join('\n')}
 const GRAND_START_BANNER = () => boxCard(
     `⚡ 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗔𝗖𝗧𝗜𝗩𝗘 ⚡`,
     [
-        `*${g('STATUS')}*      : 🟢 ONLINE & FULL POWER`,
-        `*${g('AUTO REPLY')}*  : 🤖 101% READY`,
-        `*${g('GC ENGINE')}*   : 🔥 ANC1-7 & TXT LIVE`,
-        `*${g('AI CORE')}*     : 🧠 GEMINI ACTIVE`,
-        `*${g('PAIRING')}*     : 📱 MULTI-BOT READY`
+        `*${g('STATUS')}*      : 🟢 ${g('ONLINE & FULL POWER')}`,
+        `*${g('AUTO REPLY')}*  : 🤖 ${g('CHAT SPECIFIC READY')}`,
+        `*${g('GC ENGINE')}*   : 🔥 ${g('ANC1-7 & TXT LIVE')}`,
+        `*${g('AI CORE')}*     : 🧠 ${g('GEMINI ACTIVE')}`,
+        `*${g('PAIRING')}*     : 📱 ${g('MULTI-BOT READY')}`
     ]
 );
 
 const KILL_ALL_BANNER = () => boxCard(
     `🛑 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`,
     [
-        `*${g('LOOPS & REPLY')}* : ⏸️ FROZEN`,
-        `*${g('SESSION')}*       : 🔗 CONNECTED & SAFE`,
-        `*${g('RESUME')}*        : ▶️ USE ${PREFIX}start`
+        `*${g('LOOPS & REPLY')}* : ⏸️ ${g('FROZEN')}`,
+        `*${g('SESSION')}*       : 🔗 ${g('CONNECTED & SAFE')}`,
+        `*${g('RESUME')}*        : ▶️ ${g('USE')} ${PREFIX}start`
     ]
 );
 
@@ -338,7 +332,7 @@ const CONNECTED_SUCCESS_BANNER = (phoneNum) => boxCard(
     `✅ 𝗖𝗢𝗡𝗡𝗘𝗖𝗧𝗘𝗗 𝗦𝗨𝗖𝗖𝗘𝗦𝗦𝗙𝗨𝗟𝗟𝗬 ✅`,
     [
         `*${g('NUMBER')}* : +${phoneNum}`,
-        `*${g('STATE')}*  : 🟢 ONLINE & PAIRED`,
+        `*${g('STATE')}*  : 🟢 ${g('ONLINE & PAIRED')}`,
         `*${g('BOT')}*    : ⚡ ${TAG}`
     ]
 );
@@ -346,10 +340,17 @@ const CONNECTED_SUCCESS_BANNER = (phoneNum) => boxCard(
 const AUTO_REPLY_BANNER = (enabled) => boxCard(
     enabled ? `🤖 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗡 🤖` : `⛔ 𝗔𝗨𝗧𝗢 𝗥𝗘𝗣𝗟𝗬 𝗢𝗙𝗙 ⛔`,
     [
-        `*${g('CHAT MODE')}* : ${enabled ? '🟢 101% ACTIVE' : '🔴 DISABLED'}`,
-        `*${g('REACTIONS')}* : ⚡ RANDOM EMOJI POOL`,
-        `*${g('AI ENGINE')}* : 🧠 INSTANT SMART REPLY`
+        `*${g('THIS CHAT')}* : ${enabled ? `🟢 ${g('ACTIVE')}` : `🔴 ${g('DISABLED')}`}`,
+        `*${g('REACTIONS')}* : ⚡ ${g('RANDOM EMOJI POOL')}`,
+        `*${g('AI ENGINE')}* : 🧠 ${g('INSTANT SMART REPLY')}`
     ]
+);
+
+const BOTS_LIST_BANNER = (list) => boxCard(
+    `📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 (${list.length}) 📱`,
+    list.map((s, idx) =>
+        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('CONNECTED')}` : `🟡 ${g('LINKING')}`}`
+    )
 );
 
 const MENU_TEXT = () => `
@@ -363,7 +364,7 @@ const MENU_TEXT = () => `
   📂  *${g('CORE COMMAND MENUS')}*
 
   > 🤖  ${PREFIX}autoreply on / off
-         ↳ ${g('101% chat reply and reactions')}
+         ↳ ${g('chat reply and reactions')}
 
   > 🎯  ${PREFIX}targetmenu
          ↳ ${g('name change and text commands')}
@@ -420,9 +421,9 @@ const GAMES_MENU = () => boxCard(
 );
 
 const loopStartLayout = (title, detail) => boxCard(
-    `🔥 ${title.toUpperCase()} STARTED 🔥`,
+    `🔥 ${title.toUpperCase()} ${g('STARTED')} 🔥`,
     [
-        `*${g('ENGINE')}* : ⚡ RUNNING LIVE`,
+        `*${g('ENGINE')}* : ⚡ ${g('RUNNING LIVE')}`,
         `*${g('CONFIG')}* : ${detail}`,
         `*${g('STOP')}*   : 🛑 ${PREFIX}ancstop / ${PREFIX}stoptxt / ${PREFIX}killall`
     ]
@@ -500,6 +501,7 @@ class Session {
         this.self = null;
         this.selfLid = null;
         this.notifiedConnectedOnce = false;
+        this.awaitingPairingScan = false;
 
         this.pairingInProgress = false;
         this.pairingDone = false;
@@ -569,6 +571,7 @@ class Session {
     async destroySession() {
         this.stopped = true;
         this.online = false;
+        this.awaitingPairingScan = false;
         this.clearTimers();
         this.stopAllLoops();
         try {
@@ -596,7 +599,7 @@ class Session {
         let lastError = null;
         for (let attempt = 1; attempt <= 5; attempt++) {
             try {
-                await delay(1300 * attempt);
+                await delay(1400 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const cleanCode = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
                 if (cleanCode && cleanCode.length >= 6) return cleanCode;
@@ -611,6 +614,7 @@ class Session {
     async markSessionConnectedAndNotify() {
         this.online = true;
         this.pairingDone = true;
+        this.awaitingPairingScan = false;
         this.pairingInProgress = false;
         if (this.socket?.user?.id) {
             this.self = this.socket.user.id.split(':')[0] + '@s.whatsapp.net';
@@ -641,6 +645,7 @@ class Session {
 
         this.autoPairOnInit = false;
         this.pairingDone = false;
+        this.awaitingPairingScan = true;
         this.notifiedConnectedOnce = false;
         this.pairingInProgress = true;
 
@@ -653,11 +658,12 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: ["iPhone", "Safari", "17.0"],
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
                 syncFullHistory: false,
+                msgRetryCounterCache: new Map(),
                 getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
             });
 
@@ -675,11 +681,12 @@ class Session {
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
                         this.pairingDone = false;
+                        this.awaitingPairingScan = false;
                     } else if (!this.stopped && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
                             if (!this.stopped) this.init();
-                        }, 2500);
+                        }, 3000);
                     }
                 }
             });
@@ -782,6 +789,7 @@ class Session {
     async init() {
         try {
             if (!this.phone) return;
+            if (this.awaitingPairingScan && this.socket && !this.online) return;
 
             if (this.socket) {
                 try {
@@ -808,11 +816,12 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: ["iPhone", "Safari", "17.0"],
+                browser: Browsers.ubuntu("Chrome"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
                 syncFullHistory: false,
+                msgRetryCounterCache: new Map(),
                 getMessage: async (key) => this.msgCache.get(key?.id)?.message || undefined
             });
 
@@ -918,7 +927,7 @@ class Session {
                         await this.socket.sendMessage(chat, { delete: raw.key });
                         await this.sendInstant(
                             chat,
-                            boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('USER')}*   : @${sender.split('@')[0]}`, `*${g('ACTION')}* : LINK DELETED`]),
+                            boxCard(`🚫 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('USER')}*   : @${sender.split('@')[0]}`, `*${g('ACTION')}* : ${g('LINK DELETED')}`]),
                             [sender]
                         );
                     } catch {}
@@ -957,7 +966,7 @@ class Session {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +919876543210`]));
                             continue;
                         }
-                        await this.sendInstant(chat, boxCard(`⏳ 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : GENERATING...`]));
+                        await this.sendInstant(chat, boxCard(`⏳ 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : ${g('GENERATING')}`]));
                         try {
                             const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
                             await this.sendInstant(chat, boxCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('CODE')}*   : *${resPair.code}*`]));
@@ -974,7 +983,7 @@ class Session {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}relink +919876543210`]));
                             continue;
                         }
-                        await this.sendInstant(chat, boxCard(`⏳ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : GENERATING...`]));
+                        await this.sendInstant(chat, boxCard(`⏳ 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 ⏳`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('STATE')}*  : ${g('GENERATING')}`]));
                         try {
                             const resPair = await this.hub.pairAndGetCode(cleanNum, chat, true);
                             await this.sendInstant(chat, boxCard(`🔑 𝗥𝗘𝗟𝗜𝗡𝗞 𝗖𝗢𝗗𝗘 🔑`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('CODE')}*   : *${resPair.code}*`]));
@@ -987,11 +996,10 @@ class Session {
                     if (cmd === `${PREFIX}bots` || cmd === '+bots') {
                         const list = [...this.hub.sessions.values()].filter(s => !s.stopped);
                         if (list.length === 0) {
-                            await this.sendInstant(chat, boxCard(`📱 𝗔𝗖𝗧𝗜𝗩𝗘 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 NUMBERS ADDED`]));
+                            await this.sendInstant(chat, boxCard(`📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 📱`, [`*${g('COUNT')}* : 0 ${g('NUMBERS ADDED')}`]));
                             continue;
                         }
-                        const rows = list.map((s, idx) => `${idx + 1}. +${s.phone} — ${s.online ? '🟢 Online' : '🟡 Linking'}`);
-                        await this.sendInstant(chat, boxCard(`📱 𝗔𝗖𝗧𝗜𝗩𝗘 𝗕𝗢𝗧𝗦 (${list.length}) 📱`, rows));
+                        await this.sendInstant(chat, BOTS_LIST_BANNER(list));
                         continue;
                     }
 
@@ -1004,97 +1012,97 @@ class Session {
                     if (cmd === `${PREFIX}games`) { await this.sendInstant(chat, GAMES_MENU()); continue; }
 
                     if (cmd === `${PREFIX}lockgc`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         try {
                             await this.socket.groupSettingUpdate(chat, 'announcement');
-                            await this.sendInstant(chat, boxCard(`🔒 𝗚𝗥𝗢𝗨𝗣 𝗟𝗢𝗖𝗞𝗘𝗗 🔒`, [`*${g('STATUS')}* : ADMINS ONLY CAN SEND`]));
+                            await this.sendInstant(chat, boxCard(`🔒 𝗚𝗥𝗢𝗨𝗣 𝗟𝗢𝗖𝗞𝗘𝗗 🔒`, [`*${g('STATUS')}* : ${g('ADMINS ONLY CAN SEND')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}unlockgc`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         try {
                             await this.socket.groupSettingUpdate(chat, 'not_announcement');
-                            await this.sendInstant(chat, boxCard(`🔓 𝗚𝗥𝗢𝗨𝗣 𝗨𝗡𝗟𝗢𝗖𝗞𝗘𝗗 🔓`, [`*${g('STATUS')}* : ALL MEMBERS CAN SEND`]));
+                            await this.sendInstant(chat, boxCard(`🔓 𝗚𝗥𝗢𝗨𝗣 𝗨𝗡𝗟𝗢𝗖𝗞𝗘𝗗 🔓`, [`*${g('STATUS')}* : ${g('ALL MEMBERS CAN SEND')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}promote`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 7).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'promote');
-                            await this.sendInstant(chat, boxCard(`👑 𝗣𝗥𝗢𝗠𝗢𝗧𝗘𝗗 👑`, [`*${g('STATUS')}* : ADMIN GRANTED`]));
+                            await this.sendInstant(chat, boxCard(`👑 𝗣𝗥𝗢𝗠𝗢𝗧𝗘𝗗 👑`, [`*${g('STATUS')}* : ${g('ADMIN GRANTED')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}demote`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'demote');
-                            await this.sendInstant(chat, boxCard(`⬇️ 𝗗𝗘𝗠𝗢𝗧𝗘𝗗 ⬇️`, [`*${g('STATUS')}* : ADMIN REMOVED`]));
+                            await this.sendInstant(chat, boxCard(`⬇️ 𝗗𝗘𝗠𝗢𝗧𝗘𝗗 ⬇️`, [`*${g('STATUS')}* : ${g('ADMIN REMOVED')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}mute`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
-                            await this.sendInstant(chat, boxCard(`🔇 𝗠𝗨𝗧𝗘 / 𝗥𝗘𝗠𝗢𝗩𝗘𝗗 🔇`, [`*${g('STATUS')}* : REMOVED FROM GC`]));
+                            await this.sendInstant(chat, boxCard(`🔇 𝗠𝗨𝗧𝗘 / 𝗥𝗘𝗠𝗢𝗩𝗘𝗗 🔇`, [`*${g('STATUS')}* : ${g('REMOVED FROM GC')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}unmute`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
                         if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗨𝗠𝗕𝗘𝗥 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}unmute +919876543210`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'add');
-                            await this.sendInstant(chat, boxCard(`🔊 𝗔𝗗𝗗𝗘𝗗 𝗕𝗔𝗖𝗞 🔊`, [`*${g('STATUS')}* : RESTORED TO GC`]));
+                            await this.sendInstant(chat, boxCard(`🔊 𝗔𝗗𝗗𝗘𝗗 𝗕𝗔𝗖𝗞 🔊`, [`*${g('STATUS')}* : ${g('RESTORED TO GC')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}kick`) || cmd.startsWith(`${PREFIX}remove`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const argPart = body.slice(PREFIX.length + (cmd.startsWith(`${PREFIX}kick`) ? 4 : 6)).trim();
                         const targets = getTargetUsers(raw, content, argPart);
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, targets, 'remove');
-                            await this.sendInstant(chat, boxCard(`👢 𝗞𝗜𝗖𝗞𝗘𝗗 👢`, [`*${g('STATUS')}* : REMOVED FROM GROUP`]));
+                            await this.sendInstant(chat, boxCard(`👢 𝗞𝗜𝗖𝗞𝗘𝗗 👢`, [`*${g('STATUS')}* : ${g('REMOVED FROM GROUP')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}warn`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 4).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
                         const target = targets[0];
                         gcSettings.warns[chat] = gcSettings.warns[chat] || {};
                         const nextCount = (gcSettings.warns[chat][target] || 0) + 1;
@@ -1107,13 +1115,13 @@ class Session {
                                 await this.socket.groupParticipantsUpdate(chat, [target], 'remove');
                                 await this.sendInstant(
                                     chat,
-                                    boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${MAX_WARNS_BEFORE_KICK}/${MAX_WARNS_BEFORE_KICK} (REMOVED)`]),
+                                    boxCard(`👢 𝗠𝗔𝗫 𝗪𝗔𝗥𝗡 𝗞𝗜𝗖𝗞 👢`, [`*${g('USER')}*  : @${target.split('@')[0]}`, `*${g('WARNS')}* : ${MAX_WARNS_BEFORE_KICK}/${MAX_WARNS_BEFORE_KICK}`]),
                                     [target]
                                 );
                             } catch {
                                 await this.sendInstant(
                                     chat,
-                                    boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${target.split('@')[0]}`, `*${g('NEED')}* : BOT GROUP ADMIN`]),
+                                    boxCard(`❌ 𝗞𝗜𝗖𝗞 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('USER')}* : @${target.split('@')[0]}`, `*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]),
                                     [target]
                                 );
                             }
@@ -1128,9 +1136,9 @@ class Session {
                     }
 
                     if (cmd.startsWith(`${PREFIX}unwarn`)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const targets = getTargetUsers(raw, content, body.slice(PREFIX.length + 6).trim());
-                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : TAG OR REPLY USER`])); continue; }
+                        if (!targets.length) { await this.sendInstant(chat, boxCard(`⚠️ 𝗧𝗔𝗥𝗚𝗘𝗧 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${g('TAG OR REPLY USER')}`])); continue; }
                         const target = targets[0];
                         if (gcSettings.warns?.[chat]?.[target]) {
                             delete gcSettings.warns[chat][target];
@@ -1145,64 +1153,64 @@ class Session {
                     }
 
                     if (cmd.startsWith(`${PREFIX}add `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const num = normalizeStrictPhone(body.slice(PREFIX.length + 4).trim());
                         if (!num) { await this.sendInstant(chat, boxCard(`⚠️ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}add +919876543210`])); continue; }
                         try {
                             await this.socket.groupParticipantsUpdate(chat, [`${num}@s.whatsapp.net`], 'add');
-                            await this.sendInstant(chat, boxCard(`➕ 𝗠𝗘𝗠𝗕𝗘𝗥 𝗔𝗗𝗗𝗘𝗗 ➕`, [`*${g('NUMBER')}* : +${num}`, `*${g('STATUS')}* : ADDED TO GC`]));
+                            await this.sendInstant(chat, boxCard(`➕ 𝗠𝗘𝗠𝗕𝗘𝗥 𝗔𝗗𝗗𝗘𝗗 ➕`, [`*${g('NUMBER')}* : +${num}`, `*${g('STATUS')}* : ${g('ADDED TO GC')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗔𝗗𝗗 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('NUMBER')}* : +${num}`, `*${g('REASON')}* : PRIVACY OR ADMIN LIMIT`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗔𝗗𝗗 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('NUMBER')}* : +${num}`, `*${g('REASON')}* : ${g('PRIVACY OR ADMIN LIMIT')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}setname `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const title = body.slice(PREFIX.length + 8).trim();
                         if (!title) { await this.sendInstant(chat, boxCard(`⚠️ 𝗡𝗔𝗠𝗘 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}setname New GC Name`])); continue; }
                         try {
                             await this.socket.groupUpdateSubject(chat, title);
                             await this.sendInstant(chat, boxCard(`✏️ 𝗡𝗔𝗠𝗘 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 ✏️`, [`*${g('NEW NAME')}* : ${title}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd.startsWith(`${PREFIX}setdesc `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const desc = body.slice(PREFIX.length + 8).trim();
                         if (!desc) { await this.sendInstant(chat, boxCard(`⚠️ 𝗗𝗘𝗦𝗖 𝗠𝗜𝗦𝗦𝗜𝗡𝗚 ⚠️`, [`*${g('USAGE')}* : ${PREFIX}setdesc New Description`])); continue; }
                         try {
                             await this.socket.groupUpdateDescription(chat, desc);
-                            await this.sendInstant(chat, boxCard(`📝 𝗗𝗘𝗦𝗖 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 📝`, [`*${g('STATUS')}* : DESCRIPTION SAVED`]));
+                            await this.sendInstant(chat, boxCard(`📝 𝗗𝗘𝗦𝗖 𝗨𝗣𝗗𝗔𝗧𝗘𝗗 📝`, [`*${g('STATUS')}* : ${g('DESCRIPTION SAVED')}`]));
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : BOT GROUP ADMIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗘𝗥𝗠𝗜𝗦𝗦𝗜𝗢𝗡 𝗗𝗘𝗡𝗜𝗘𝗗 ❌`, [`*${g('NEED')}* : ${g('BOT GROUP ADMIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}antilink on` || cmd === `${PREFIX}antilink off`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const enabled = cmd.endsWith(' on');
                         gcSettings.antiLink[chat] = enabled;
                         saveGcSettings();
-                        await this.sendInstant(chat, boxCard(`🛡️ 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('MODE')}* : ${enabled ? '🟢 ENABLED' : '🔴 DISABLED'}`]));
+                        await this.sendInstant(chat, boxCard(`🛡️ 𝗔𝗡𝗧𝗜 𝗟𝗜𝗡𝗞 🛡️`, [`*${g('MODE')}* : ${enabled ? `🟢 ${g('ENABLED')}` : `🔴 ${g('DISABLED')}`}`]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}welcome on` || cmd === `${PREFIX}welcome off`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         const enabled = cmd.endsWith(' on');
                         gcSettings.welcome[chat] = enabled;
                         saveGcSettings();
-                        await this.sendInstant(chat, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗠𝗦𝗚 👋`, [`*${g('MODE')}* : ${enabled ? '🟢 ENABLED' : '🔴 DISABLED'}`]));
+                        await this.sendInstant(chat, boxCard(`👋 𝗪𝗘𝗟𝗖𝗢𝗠𝗘 𝗠𝗦𝗚 👋`, [`*${g('MODE')}* : ${enabled ? `🟢 ${g('ENABLED')}` : `🔴 ${g('DISABLED')}`}`]));
                         continue;
                     }
 
                     if (cmd === `${PREFIX}groupinfo` || cmd === `${PREFIX}admins`) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         try {
                             const meta = await this.socket.groupMetadata(chat);
                             const adminList = (meta.participants || []).filter(p => p.admin === 'admin' || p.admin === 'superadmin');
@@ -1211,7 +1219,7 @@ class Session {
                             if (cmd === `${PREFIX}admins`) {
                                 await this.sendInstant(
                                     chat,
-                                    boxCard(`👑 𝗚𝗥𝗢𝗨𝗣 𝗔𝗗𝗠𝗜𝗡𝗦 (${adminTags.length}) 👑`, adminTags.length ? adminTags : ['NO ADMINS FOUND']),
+                                    boxCard(`👑 𝗚𝗥𝗢𝗨𝗣 𝗔𝗗𝗠𝗜𝗡𝗦 (${adminTags.length}) 👑`, adminTags.length ? adminTags : [g('NO ADMINS FOUND')]),
                                     mentions
                                 );
                             } else {
@@ -1229,13 +1237,13 @@ class Session {
                                 );
                             }
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗙𝗢 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('STATUS')}* : FAILED TO FETCH GC INFO`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗙𝗢 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('STATUS')}* : ${g('FAILED TO FETCH GC INFO')}`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}tagall` || cmd.startsWith(`${PREFIX}tagall `) || cmd === `${PREFIX}everyone` || cmd.startsWith(`${PREFIX}everyone `)) {
-                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`])); continue; }
+                        if (!isGroup) { await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`])); continue; }
                         try {
                             const meta = await this.socket.groupMetadata(chat);
                             const members = (meta.participants || []).map(p => p.id).filter(Boolean);
@@ -1251,13 +1259,13 @@ class Session {
                                 }
                             }
                         } catch {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗧𝗔𝗚𝗔𝗟𝗟 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('STATUS')}* : TRY AGAIN`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗧𝗔𝗚𝗔𝗟𝗟 𝗙𝗔𝗜𝗟𝗘𝗗 ❌`, [`*${g('STATUS')}* : ${g('TRY AGAIN')}`]));
                         }
                         continue;
                     }
 
                     if (cmd === `${PREFIX}flip`) {
-                        const side = Math.random() < 0.5 ? '🪙 HEADS' : '🪙 TAILS';
+                        const side = Math.random() < 0.5 ? `🪙 ${g('HEADS')}` : `🪙 ${g('TAILS')}`;
                         await this.sendInstant(chat, boxCard(`🪙 𝗖𝗢𝗜𝗡 𝗙𝗟𝗜𝗣 🪙`, [`*${g('RESULT')}* : ${side}`]));
                         continue;
                     }
@@ -1277,8 +1285,8 @@ class Session {
                             boxCard(
                                 `🎮 𝗥𝗢𝗖𝗞 𝗣𝗔𝗣𝗘𝗥 𝗦𝗖𝗜𝗦𝗦𝗢𝗥𝗦 🎮`,
                                 [
-                                    `*${g('YOU')}* : ${(userPick || 'RANDOM').toUpperCase()}`,
-                                    `*${g('BOT')}* : ${botPick.toUpperCase()}`
+                                    `*${g('YOU')}* : ${g(userPick || 'RANDOM')}`,
+                                    `*${g('BOT')}* : ${g(botPick)}`
                                 ]
                             )
                         );
@@ -1287,7 +1295,7 @@ class Session {
 
                     if (cmd === `${PREFIX}ancstop` || cmd === `${PREFIX}stoptxt`) {
                         this.stopAllLoops();
-                        await this.sendInstant(chat, boxCard(`🛑 𝗟𝗢𝗢𝗣𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`, [`*${g('STATUS')}* : ALL ACTIVE LOOPS HALTED`]));
+                        await this.sendInstant(chat, boxCard(`🛑 𝗟𝗢𝗢𝗣𝗦 𝗦𝗧𝗢𝗣𝗣𝗘𝗗 🛑`, [`*${g('STATUS')}* : ${g('ALL ACTIVE LOOPS HALTED')}`]));
                         continue;
                     }
 
@@ -1329,7 +1337,7 @@ class Session {
                             matchedAnc = true;
                             const rawArgs = body.slice(PREFIX.length + key.length + 1).trim();
                             if (!rawArgs || !isGroup) {
-                                if (!isGroup) await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : GROUP CHAT`]));
+                                if (!isGroup) await this.sendInstant(chat, boxCard(`⚠️ 𝗚𝗥𝗢𝗨𝗣 𝗢𝗡𝗟𝗬 ⚠️`, [`*${g('USE IN')}* : ${g('GROUP CHAT')}`]));
                                 break;
                             }
 
@@ -1356,7 +1364,7 @@ class Session {
                     if (matchedAnc) continue;
                 }
 
-                // 101% Per-Chat Auto-Reply + Massive Varied Emoji Reactions
+                // Strictly Per-Chat Auto-Reply + Massive Varied Emoji Reactions
                 if (
                     !runtimeState.botPaused &&
                     isChatAutoReplyOn(this.phone, chat) &&
@@ -1368,7 +1376,7 @@ class Session {
                     const chosenEmoji = pickRandomReaction();
 
                     this.enqueueSend(async () => {
-                        if (!this.stopped && !runtimeState.botPaused && this.socket) {
+                        if (!this.stopped && !runtimeState.botPaused && this.socket && isChatAutoReplyOn(this.phone, chat)) {
                             await this.socket.sendMessage(chat, { react: { text: chosenEmoji, key: raw.key } });
                         }
                     });
