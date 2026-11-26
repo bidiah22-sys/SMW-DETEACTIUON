@@ -1,3 +1,8 @@
+// ╔══════════════════════════════════════════════════════════════╗
+// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER LOGS + WHATSAPP PAIRING ENGINE     ║
+// ║     !addbot <num> -> Render Logs Code -> Sends Same Code WA  ║
+// ╚══════════════════════════════════════════════════════════════╝
+
 import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
@@ -11,6 +16,9 @@ import fs from 'fs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import express from 'express';
 
+// =========================================================================
+// 1. CONFIGURATION
+// =========================================================================
 const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 const PING_MINUTES = 4;
 
@@ -31,7 +39,11 @@ const PATH_PREFIX    = './store/prefix.json';
 const PATH_BOTS      = './store/bots.json';
 const PATH_STATE     = './store/state.json';
 const PATH_GC        = './store/gc_settings.json';
+// =========================================================================
 
+// =========================================================================
+// 2. STORAGE & PHONE NORMALIZATION
+// =========================================================================
 try {
     fs.mkdirSync('./store', { recursive: true });
     fs.mkdirSync('./sessions', { recursive: true });
@@ -152,7 +164,11 @@ const grantOwner = j => {
     }
     return false;
 };
+// =========================================================================
 
+// =========================================================================
+// 3. EMOJIS, STYLING & GEMINI AI
+// =========================================================================
 const RAW_EMOJI_STRING = "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃❤️🔥⚡👑💀🎯💣🌀🎭🪬🧿💎🗡️🐉☠️";
 const REACTION_POOL = Array.from(new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(RAW_EMOJI_STRING))
     .map(s => s.segment.trim())
@@ -213,7 +229,7 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
         `*${g('CODE')}*   : \`${formattedCode}\``,
         `*${g('PLAIN')}*  : \`${rawCode}\``,
         `*${g('STEPS')}*  : ${g('WHATSAPP > LINKED DEVICES')}`,
-        `*${g('LOGS')}*   : ${g('PRINTED IN RENDER LOGS')}`
+        `*${g('LOGS')}*   : ${g('ALSO IN RENDER LOGS')}`
     ]);
 };
 
@@ -345,7 +361,11 @@ async function generateDirectAI(userPrompt) {
     const reply = await callGeminiWithFallback(prompt, 0.88);
     return (reply || buildDynamicFallbackReply(userPrompt)).slice(0, 1600);
 }
+// =========================================================================
 
+// =========================================================================
+// 4. MESSAGE & GROUP HELPERS
+// =========================================================================
 const SET_KEYS = {
     anc1: 'faces', anc2: 'hearts', anc3: 'hands', anc4: 'flowers',
     anc5: 'sky', anc6: 'animals', anc7: 'fruits'
@@ -394,7 +414,11 @@ async function getFastVersion() {
     cachedBaileysVersion = [2, 3000, 1015901307];
     return cachedBaileysVersion;
 }
+// =========================================================================
 
+// =========================================================================
+// 5. SESSION & PAIRING WORKER (RENDER LOGS -> WHATSAPP CHAT)
+// =========================================================================
 class Session {
     constructor(id, phone, hub, requesterJid = null, freshAuth = false, logOtpOnce = false, isPrimary = false) {
         this.id = id;
@@ -516,48 +540,35 @@ class Session {
         }, backoffMs);
     }
 
-    async waitForSocketHandshake(sock, maxWaitMs = 6000) {
-        const started = Date.now();
-        while (Date.now() - started < maxWaitMs) {
-            if (this.stopped || this.socket !== sock || this.online) return;
-            if (this.connecting || sock?.ws?.readyState === 1) {
-                await delay(600);
-                return;
-            }
-            await delay(250);
-        }
-    }
-
-    async requestRealSocketCode(sock) {
-        await this.waitForSocketHandshake(sock, 6000);
+    async requestRealSocketCode(sock, sourceTag = 'ADDBOT') {
         let lastErr = null;
         for (let attempt = 1; attempt <= 6; attempt++) {
             try {
+                await delay(1000 * attempt);
                 if (this.stopped || this.socket !== sock) {
                     throw new Error('Socket replaced or stopped during pairing');
                 }
                 if (!sock || typeof sock.requestPairingCode !== 'function') {
                     throw new Error('requestPairingCode not available on socket');
                 }
-                console.log(`[PAIR CALL] +${this.phone} attempt ${attempt}`);
+                console.log(`[RENDER ${sourceTag} ATTEMPT ${attempt}] +${this.phone} requesting pairing code...`);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 8);
                 if (clean.length >= 6) {
                     const formatted = clean.match(/.{1,4}/g)?.join('-') || clean;
                     this.lastRealCode = formatted;
-                    console.log(`\n========================================`);
-                    console.log(`[PAIRING CODE] +${this.phone} => ${formatted}`);
-                    console.log(`========================================\n`);
+                    console.log(`\n╔══════════════════════════════════════════════════╗`);
+                    console.log(`║ [RENDER LOGS PAIRING CODE] +${this.phone} => ${formatted}`);
+                    console.log(`╚══════════════════════════════════════════════════╝\n`);
                     return formatted;
                 }
-                lastErr = new Error('Empty or invalid code returned');
+                lastErr = new Error('Socket returned empty/short code');
             } catch (err) {
                 lastErr = err;
-                console.log(`[PAIR ERR] +${this.phone} attempt ${attempt}: ${err?.message || err}`);
-                await delay(900 * attempt);
+                console.log(`[RENDER ${sourceTag} ERR ${attempt}] +${this.phone}:`, err?.message || err);
             }
         }
-        throw lastErr || new Error('Failed to generate pairing code');
+        throw lastErr || new Error('Failed to fetch real pairing code from WhatsApp socket');
     }
 
     armPairingWatchdog() {
@@ -602,7 +613,7 @@ class Session {
 
             if (connection === "connecting") {
                 this.connecting = true;
-                console.log(`[CONN CONNECTING] +${this.phone}`);
+                console.log(`[RENDER SOCKET CONNECTING] +${this.phone}`);
             } else if (connection === "open") {
                 if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
                 this.online = true;
@@ -612,7 +623,7 @@ class Session {
                 this.reconnectAttempts = 0;
                 if (sock.user?.id) this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                 if (sock.user?.lid) this.selfLid = sock.user.lid.split(':')[0] + '@lid';
-                console.log(`[CONN OPEN] +${this.phone}`);
+                console.log(`[RENDER ONLINE] +${this.phone} linked & ready`);
                 if (this.requesterJid) {
                     await this.sendInstant(this.requesterJid, boxCard(`✅ 𝗕𝗢𝗧 𝗟𝗜𝗡𝗞𝗘𝗗 ✅`, [
                         `*${g('NUMBER')}* : +${this.phone}`,
@@ -626,7 +637,7 @@ class Session {
                 if (this.stopped) return;
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const errMsg = lastDisconnect?.error?.message || '';
-                console.log(`[CONN CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
+                console.log(`[RENDER CONN CLOSE] +${this.phone} code=${statusCode || 'unknown'} ${errMsg}`);
 
                 if (statusCode === DisconnectReason.loggedOut) {
                     if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
@@ -648,7 +659,7 @@ class Session {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
 
-        console.log(`[PAIR START] +${this.phone}`);
+        console.log(`[RENDER ADDBOT SETUP] +${this.phone} -> running fresh socket & printing code in Render logs...`);
 
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
         if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
@@ -659,7 +670,7 @@ class Session {
         await this.closeSocketCleanly();
 
         this.pairingBusy = true;
-        this.connecting = false;
+        this.connecting = true;
         this.sessionReady = false;
         this.reconnectAttempts = 0;
         this.otpPrinted = true;
@@ -668,13 +679,13 @@ class Session {
 
         try {
             const { sock } = await this.createSocket(authDir);
-            const realCode = await this.requestRealSocketCode(sock);
+            const realCode = await this.requestRealSocketCode(sock, 'ADDBOT');
             return realCode;
         } catch (err) {
             if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
             this.pairingBusy = false;
             this.connecting = false;
-            console.log(`[PAIR FAILED] +${this.phone}: ${err?.message || err}`);
+            console.log(`[RENDER ADDBOT FAILED] +${this.phone}:`, err?.message || err);
             throw err;
         }
     }
@@ -685,11 +696,11 @@ class Session {
 
         this.otpPrinted = true;
         this.pairingBusy = true;
-        console.log(`[PRIMARY PAIR] +${this.phone}`);
+        console.log(`[RENDER PRIMARY BOOT] +${this.phone} -> printing pairing code in Render logs...`);
         try {
-            await this.requestRealSocketCode(sock);
+            await this.requestRealSocketCode(sock, 'BOOT');
         } catch (err) {
-            console.log(`[PRIMARY PAIR FAILED] +${this.phone}: ${err?.message || err}`);
+            console.log(`[RENDER PRIMARY FAILED] +${this.phone}:`, err?.message || err);
         } finally {
             this.pairingBusy = false;
         }
@@ -707,7 +718,7 @@ class Session {
                 this.freshAuth = false;
             }
             ensureDir(authDir);
-            this.connecting = false;
+            this.connecting = true;
 
             const { sock } = await this.createSocket(authDir);
             if (this.logOtpOnce && !sock.authState?.creds?.registered && !this.otpPrinted) {
@@ -762,14 +773,14 @@ class Session {
                 const allowed = isFromMe || isOwn || isSub(sender, chat);
 
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
-                    console.log(`[CMD] ${cmd} from ${sender} in ${chat}`);
+                    console.log(`[RENDER CMD] ${cmd} from ${sender} in ${chat}`);
                     this.hub.resumeAllBots();
                     await this.sendInstant(chat, GRAND_START_BANNER());
                     continue;
                 }
 
                 if (allowed && (cmd === `${PREFIX}killall` || cmd === '-all')) {
-                    console.log(`[CMD] ${cmd} from ${sender} in ${chat}`);
+                    console.log(`[RENDER CMD] ${cmd} from ${sender} in ${chat}`);
                     this.hub.pauseAllBotsKeepSessionAlive();
                     await this.sendInstant(chat, KILL_ALL_BANNER());
                     continue;
@@ -847,7 +858,6 @@ class Session {
 
                     if (cmd.startsWith(`${PREFIX}unpair `)) {
                         const cleanNum = normalizeStrictPhone(body.slice(PREFIX.length + 7).trim());
-                        console.log(`[UNPAIR CMD] +${cleanNum || 'INVALID'} from ${chat}`);
                         if (!cleanNum) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}unpair +9647882064284`]));
                             continue;
@@ -863,7 +873,7 @@ class Session {
                     if (cmd.startsWith(`${PREFIX}addbot `) || cmd.startsWith('+pair ') || cmd.startsWith(`${PREFIX}relink `) || cmd.startsWith('+relink ')) {
                         const rawNum = body.replace(new RegExp(`^(\\${PREFIX}(addbot|relink)|\\+(pair|relink))\\s+`, 'i'), '').trim();
                         const cleanNum = normalizeStrictPhone(rawNum);
-                        console.log(`[ADDBOT CMD] raw="${rawNum}" clean="${cleanNum || 'INVALID'}" chat=${chat}`);
+                        console.log(`[RENDER ADDBOT CMD] raw="${rawNum}" clean="${cleanNum || 'INVALID'}" chat=${chat}`);
                         if (!cleanNum) {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +9647882064284`]));
                             continue;
@@ -1238,7 +1248,11 @@ function sockSafeBind(session, targetSock = session.socket) {
         session.onGroupParticipantsUpdate(ev).catch(() => {});
     });
 }
+// =========================================================================
 
+// =========================================================================
+// 6. HUB QUEUE & SERVER ENTRYPOINT
+// =========================================================================
 class Hub {
     constructor() {
         this.sessions = new Map();
@@ -1265,7 +1279,7 @@ class Hub {
         if (!clean) throw new Error('Invalid phone number');
 
         const runTask = async () => {
-            console.log(`[QUEUE ADDBOT] +${clean}`);
+            console.log(`[RENDER QUEUE] Pairing +${clean} -> printing code in Render logs first...`);
             const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
             const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
             for (const [key, oldSess] of existingEntries) {
@@ -1356,7 +1370,16 @@ function startKeepAlive() {
     }, intervalMs);
 }
 
-console.log(`SMW Render Engine Booting | Primary=${CONFIGURED_BOT_NUMBER || 'NONE'} | Port=${PORT}`);
+console.log(`
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — RENDER + WHATSAPP ENGINE ⚡
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Primary Bot       : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
+  Gemini AI         : ENABLED (${GEMINI_MODELS.join(', ')})
+  Pairing Flow      : Render Logs -> WhatsApp Chat
+  Initial State     : STANDBY (Send !start)
+  Port              : ${PORT}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`);
 
 process.on('uncaughtException', err => console.log('[SAFE UNCAUGHT]', err?.message || err));
 process.on('unhandledRejection', err => console.log('[SAFE REJECTION]', err?.message || err));
