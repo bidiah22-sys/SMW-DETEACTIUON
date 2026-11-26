@@ -1,6 +1,6 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║          𝗦𝗠𝗪 𝗜𝗢𝗦 — DIRECT WHATSAPP & PAIRING ENGINE        ║
-// ║         Clean Separated Modules Inside Single index.js         ║
+// ║        𝗦𝗠𝗪 𝗜𝗢𝗦 — REAL LOG-TO-WHATSAPP PAIRING ENGINE       ║
+// ║      Shows Number in Logs -> Prints Real Code -> Sends to WA  ║
 // ╚══════════════════════════════════════════════════════════════╝
 
 import makeWASocket, {
@@ -19,7 +19,7 @@ import express from 'express';
 // =========================================================================
 // 1. CONFIGURATION & INTERNATIONAL NUMBER
 // =========================================================================
-const BOT_NUMBER = process.env.BOT_NUMBER || "+917488917344";
+const BOT_NUMBER = process.env.BOT_NUMBER || "+9647882064284";
 const PING_MINUTES = 4;
 
 const MIN_SAFE_DELAY_MS   = 500;
@@ -109,7 +109,6 @@ if (!gcSettings.welcome) gcSettings.welcome = {};
 if (!gcSettings.warns) gcSettings.warns = {};
 
 let GLOBAL_EPOCH = 1;
-const PRINTED_LOG_OTPS = new Set();
 let cachedBaileysVersion = null;
 const BOOT_TS = Date.now();
 
@@ -227,10 +226,10 @@ const pairingCodeCard = (title, cleanNum, formattedCode) => {
     const rawCode = String(formattedCode || '').replace(/[^A-Z0-9]/gi, '');
     return boxCard(title, [
         `*${g('NUMBER')}* : +${cleanNum}`,
-        `*${g('TAP COPY')}* : \`${formattedCode}\``,
-        `*${g('PLAIN')}*    : \`${rawCode}\``,
-        `*${g('STEPS')}*    : ${g('WHATSAPP > LINKED DEVICES')}`,
-        `*${g('STATUS')}*   : ${g('ENTER CODE NOW')}`
+        `*${g('CODE')}*   : \`${formattedCode}\``,
+        `*${g('PLAIN')}*  : \`${rawCode}\``,
+        `*${g('STEPS')}*  : ${g('WHATSAPP > LINKED DEVICES')}`,
+        `*${g('SOURCE')}* : ${g('FROM SERVER LOGS')}`
     ]);
 };
 
@@ -435,6 +434,7 @@ class Session {
         this.self = null;
         this.selfLid = null;
         this.otpPrinted = false;
+        this.lastRealCode = null;
 
         this.pairingBusy = false;
         this.connecting = false;
@@ -540,35 +540,31 @@ class Session {
         }, backoffMs);
     }
 
-    async requestCleanCode(sock) {
+    async requestRealSocketCode(sock) {
         let lastErr = null;
         for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(350 * attempt);
-                if (typeof sock?.requestPairingCode !== 'function') {
-                    throw new Error('requestPairingCode unavailable');
+                await delay(400 * attempt);
+                if (!sock || typeof sock.requestPairingCode !== 'function') {
+                    throw new Error('requestPairingCode not available on socket');
                 }
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '').replace(/[^A-Z0-9]/gi, '').toUpperCase().slice(0, 8);
                 if (clean.length >= 6) {
-                    return clean.match(/.{1,4}/g)?.join('-') || clean;
+                    const formatted = clean.match(/.{1,4}/g)?.join('-') || clean;
+                    this.lastRealCode = formatted;
+                    console.log(`\n╔══════════════════════════════════════════════╗`);
+                    console.log(`║ [REAL PAIRING CODE] +${this.phone} => ${formatted}`);
+                    console.log(`╚══════════════════════════════════════════════╝\n`);
+                    return formatted;
                 }
-                lastErr = new Error('Empty pairing code');
+                lastErr = new Error('Socket returned empty/short code');
             } catch (err) {
                 lastErr = err;
-                console.log(`[PAIR ATTEMPT ${attempt}] +${this.phone}:`, err?.message || err);
+                console.log(`[REAL CODE ATTEMPT ${attempt} FAILED] +${this.phone}:`, err?.message || err);
             }
         }
-        throw lastErr || new Error('Pairing code failed');
-    }
-
-    printCodeInLogsOnce(tagLabel, formattedCode) {
-        const key = `${tagLabel}__${this.phone}__${formattedCode}`;
-        if (PRINTED_LOG_OTPS.has(key)) return;
-        PRINTED_LOG_OTPS.add(key);
-        console.log(`\n╔══════════════════════════════════════════════╗`);
-        console.log(`║ ${tagLabel} (+${this.phone}) => ${formattedCode}`);
-        console.log(`╚══════════════════════════════════════════════╝\n`);
+        throw lastErr || new Error('Failed to fetch real pairing code from WhatsApp socket');
     }
 
     armPairingWatchdog() {
@@ -579,6 +575,7 @@ class Session {
             if (this.pairingBusy && !this.sessionReady) {
                 this.pairingBusy = false;
                 this.connecting = false;
+                console.log(`[PAIR WATCHDOG] +${this.phone} reconnecting socket after code issue`);
                 this.scheduleReconnect('pairing_watchdog', 900);
             }
         }, PAIR_LOGIN_WATCH_MS);
@@ -621,7 +618,7 @@ class Session {
                 this.reconnectAttempts = 0;
                 if (sock.user?.id) this.self = sock.user.id.split(':')[0] + '@s.whatsapp.net';
                 if (sock.user?.lid) this.selfLid = sock.user.lid.split(':')[0] + '@lid';
-                console.log(`[ONLINE] +${this.phone} ready`);
+                console.log(`[ONLINE] +${this.phone} linked & ready`);
                 if (this.requesterJid) {
                     await this.sendInstant(this.requesterJid, boxCard(`✅ 𝗕𝗢𝗧 𝗟𝗜𝗡𝗞𝗘𝗗 ✅`, [
                         `*${g('NUMBER')}* : +${this.phone}`,
@@ -657,6 +654,8 @@ class Session {
         if (!this.phone) throw new Error('Invalid phone number');
         if (this.pairingBusy) throw new Error('Pairing already in progress');
 
+        console.log(`[PAIR REQUEST] +${this.phone} — opening fresh socket for real pairing code...`);
+
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
         if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
 
@@ -670,17 +669,18 @@ class Session {
         this.sessionReady = false;
         this.reconnectAttempts = 0;
         this.otpPrinted = true;
+        this.lastRealCode = null;
         this.armPairingWatchdog();
 
         try {
             const { sock } = await this.createSocket(authDir);
-            const formattedCode = await this.requestCleanCode(sock);
-            this.printCodeInLogsOnce('PAIRING CODE', formattedCode);
-            return formattedCode;
+            const realCode = await this.requestRealSocketCode(sock);
+            return realCode;
         } catch (err) {
             if (this.pairingWatchTimer) { clearTimeout(this.pairingWatchTimer); this.pairingWatchTimer = null; }
             this.pairingBusy = false;
             this.connecting = false;
+            console.log(`[PAIR FAILED] +${this.phone}:`, err?.message || err);
             throw err;
         }
     }
@@ -691,11 +691,11 @@ class Session {
 
         this.otpPrinted = true;
         this.pairingBusy = true;
+        console.log(`[PRIMARY PAIR REQUEST] +${this.phone} — requesting real pairing code in logs...`);
         try {
-            const formattedCode = await this.requestCleanCode(sock);
-            this.printCodeInLogsOnce('PRIMARY CODE', formattedCode);
+            await this.requestRealSocketCode(sock);
         } catch (err) {
-            console.log(`[PRIMARY LOG ERR] +${this.phone}:`, err?.message || err);
+            console.log(`[PRIMARY CODE FAILED] +${this.phone}:`, err?.message || err);
         } finally {
             this.pairingBusy = false;
         }
@@ -870,11 +870,15 @@ class Session {
                             await this.sendInstant(chat, boxCard(`❌ 𝗜𝗡𝗩𝗔𝗟𝗜𝗗 𝗡𝗨𝗠𝗕𝗘𝗥 ❌`, [`*${g('FORMAT')}* : ${PREFIX}addbot +9647882064284`]));
                             continue;
                         }
+                        console.log(`[CMD PAIR] +${cleanNum} requested from chat ${chat}`);
                         try {
-                            const code = await this.hub.addNumberInChat(cleanNum, chat);
-                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, code));
+                            const realCode = await this.hub.addNumberInChat(cleanNum, chat);
+                            await this.sendInstant(chat, pairingCodeCard(`🔑 𝗣𝗔𝗜𝗥𝗜𝗡𝗚 𝗖𝗢𝗗𝗘 🔑`, cleanNum, realCode));
                         } catch (err) {
-                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [`*${g('NUMBER')}* : +${cleanNum}`, `*${g('INFO')}*   : ${err.message}`]));
+                            await this.sendInstant(chat, boxCard(`❌ 𝗣𝗔𝗜𝗥 𝗘𝗥𝗥𝗢𝗥 ❌`, [
+                                `*${g('NUMBER')}* : +${cleanNum}`,
+                                `*${g('REASON')}* : ${err.message}`
+                            ]));
                         }
                         continue;
                     }
@@ -1268,6 +1272,7 @@ class Hub {
         if (!clean) throw new Error('Invalid phone number');
 
         const runTask = async () => {
+            console.log(`[QUEUE START] Pairing +${clean}...`);
             const isTargetPrimary = Boolean(CONFIGURED_BOT_NUMBER && clean === CONFIGURED_BOT_NUMBER);
             const existingEntries = [...this.sessions.entries()].filter(([, s]) => s.phone === clean && !s.stopped);
             for (const [key, oldSess] of existingEntries) {
@@ -1359,10 +1364,10 @@ function startKeepAlive() {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — DIRECT ENGINE ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 — REAL LOG PAIRING ENGINE ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   International Bot : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Mode              : DIRECT WHATSAPP (NO APK)
+  Log -> WhatsApp   : ENABLED (Real Socket Code)
   Initial State     : STANDBY (Send !start)
   Port              : ${PORT}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
