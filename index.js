@@ -1,5 +1,5 @@
 // ╔══════════════════════════════════════════════════════════════╗
-// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18                          ║
+// ║                      𝗦𝗠𝗪 𝗜𝗢𝗦 v18.1                        ║
 // ║          Multi-Bot WhatsApp Manager & Loop Engine            ║
 // ╚══════════════════════════════════════════════════════════════╝
 
@@ -36,7 +36,7 @@ const RAW_EMOJI_STRING =
     "😀😃😄😁😆😅😂🤣🥲🥹😊😇🙂🙃😉😌😍🥰😘😗😙😚😋😛😝😜🤪🤨🧐🤓😎🥸🤩🥳😏😒😞😔😟😕🙁☹️😣😖😫😩🥺😢😭😤😠😡🤬🤯😳🥵🥶😶‍🌫️😱😨😰😥😓🤗🤔🫣🤭🫢🫡🤫🫠🤥😶🫥😐🫤😑🫨😬🙄😯😦😧😮😲🥱😴🤤😪😮‍💨😵😵‍💫🤐🥴🤢🤮🤧😷🤒🤕🤑🤠😈👿👹👺🤡💩👻💀☠️👽👾🤖🎃" +
     "😺😸😹😻😼😽🙀😿😾💋💌💘💝💖💗💓💞💕💟❣️💔❤️‍🔥❤️‍🩹❤️🩷🧡💛💚💙🩵💜🤎🖤🩶🤍💯💢💥💫💦💨🕳️💬👁️‍🗨️🗨️🗯️💭💤" +
     "👋🤚🖐️✋🖖🫱🫲🫳🫴🫷🫸👌🤌🤏✌️🤞🫰🤟🤘🤙👈👉👆🖕👇☝️🫵👍👎✊👊🤛🤜👏🙌🫶👐🤲🤝🙏✍️💅🤳💪🦾🦿🦵🦶👂🦻👃🧠🫀🫁🦷🦴👀👁️👅👄🫦" +
-    "🐵🐒🦍🦧🐶🐕🦮🐕‍🦺🐩🐺🦊🦝🐱🐈🐈‍⬛🦁🐯🐅🐆🐴🫎🫏🐎🦄🦓🦌🦬🐮🐂🐃🐄🐷🐖🐗🐽🐏🐑🐐🐪🐫🦙🦒🐘🦣🦏🦛🐭🐁🐀🐹🐰🐇🐿️🦫🦔🦇🐻🐻‍❄️🐨🐼🦥🦦🦨🦘🦡🐾🦃🐔🐓🐣🐤🐥🐦🐧🕊️🦅🦆🦢🦉🦤🪶🦩🦚🦜🪽🐦‍⬛🪿🐸🐊🐢🦎🐍🐲🐉🦕🦖🐳🐋🐬🦭🐟🐠🐡🦈🐙🐚🪸🪼🐌🦋🐛🐜🐝🪲🐞🦗🪳🕷️🕸️🦂🦟🪰🪱🦠" +
+    "🐵🐒🦍🦧🐶🐕🦮🐕‍🦺🐩🐺🦊🦝🐱🐈🐈‍⬛🦁🐯🐅🐆🐴🫎🫏🐎🦄🦓🦌🦬🐮🐂🐃🐄🐷🐖🐗🐽🐏🐑🐐🐪🐫🦙🦒🐘🦣🦏🦛🐭🐁🐀🐹🐰🐇🐿️🦫🦔🦇🐻🐻‍❄️🐨🐼🦥🦦🦨🦘🦡🐾🦃🐔🐓🐣🐤🐥🐦🐧🕊️🦅🦆🦢🦉🦤🪶🦩🦚🦜🪽🐦‍⬛🿿🐸🐊🐢🦎🐍🐲🐉🦕🦖🐳🐋🐬🦭🐟🐠🐡🦈🐙🐚🪸🪼🐌🦋🐛🐜🐝🪲🐞🦗🪳🕷️🕸️🦂🦟🪰🪱🦠" +
     "💐🌸💮🪷🏵️🌹🥀🌺🌻🌼🌷🪻🌱🪴🌲🌳🌴🌵🌾🌿☘️🍀🍁🍂🍃🪹🪺🍄🍇🍈🍉🍊🍋🍌🍍🥭🍎🍏🍐🍑🍒🍓🫐🥝🍅🫒🥥🥑🍆🥔🥕🌽🌶️🫑🥒🥬🥦🧄🧅🥜🫘🌰🫚🫛🍞🥐🥖🫓🥨🥯🥞🧇🧀🍖🍗🥩🥓🍔🍟🍕🌭🥪🌮🌯🫔🥙🧆🥚🍳🥘🍲🫕🥣🥗🍿🧈🧂🥫🍱🍘🍙🍚🍛🍜🍝🍠🍢🍣🍤🍥🥮🍡🥟🥠🥡🦀🦞🦐🦑🦪🍦🍧🍨🍩🍪🎂🍰🧁🥧🍫🍬🍭🍮🍯🍼🥛☕🫖🍵🍶🍾🍷🍸🍹🍺🍻🥂🥃🗗🥤🧋🧃🧉🧊" +
     "🌍🌎🌏🌐🗺️🧭🏔️⛰️🌋🗻🏕️🏖️🏜️🏝️🏞️🏟️🏛️🏗️🧱🪨🪵🛖🏘️🏚️🏠🏡🏢🏣🏤🏥🏦🏨🏩🏪🏫🏬🏭🏯🏰💒🗼🗽⛪🕌🛕🕍⛩️🕋⛲⛺🌁🌃🏙️🌄🌅🌆🌇🌉♨️🎠🛝🎡🎢💈🎪🚂🚃🚄🚅🚆🚇🚈🚉🚊🚝🚞🚋🚌🚍🚎🚐🚑🚒🚓🚔🚕🚖🚗🚘🚙🛻🚚🚛🚜🏎️🏍️🛵🦽🦼🛺🚲🛴🛹🛼🚏🛣️🛤️🛢️⛽🛞🚨🚥🚦🛑🚧⚓🛟⛵🛶🚤🛳️⛴️🛥️🚢✈️🛩️🛫🛬🪂💺🚁🚟🚠🚡🛰️🚀🛸" +
     "🛎️🧳⌛⏳⌚⏰⏱️⏲️🕰️🕛🕧🕐🕜🕑🕝🕒🕞🕓🕟🕔🕠🕕🕡🕖🕢🕗🕣🕘🕤🕙🕥十一🕦🌑🌒🌓🌔🌕🌖🌗🌘🌙🌚🌛🌜🌡️☀️🌝🌞🪐⭐🌟🌠🌌☁️⛅⛈️🌤️🌥️🌦️🌧️🌨️🌩️🌪️🌫️🌬️🌀🌈🌂☂️☔⛱️⚡❄️☃️⛄☄️🔥💧🌊" +
@@ -59,7 +59,6 @@ function pickRandomReaction() {
     return REACTION_POOL[idx];
 }
 
-// Supports Indian (+91 / 91 / 091 / 10-digit) and any international E.164 country code
 function normalizeStrictPhone(rawInput) {
     if (!rawInput) return '';
     let digits = String(rawInput).replace(/\D/g, '');
@@ -180,13 +179,14 @@ function getSafeDelay(inputMs) {
 }
 
 // ─────────────────────────────────────────────
-//  GEMINI AI ENGINE
+//  GEMINI AI ENGINE (UNIQUE PER-PROMPT & NO STATIC REPEATS)
 // ─────────────────────────────────────────────
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "AIzaSyBd3S8mbO_EYpERC_LMfkxMzTs0LLVZoeg";
 const genAI = new GoogleGenerativeAI(GEMINI_KEY);
 const GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
+const recentRepliesSet = new Set();
 
-function withTimeout(promise, ms = 8000) {
+function withTimeout(promise, ms = 9000) {
     let timer;
     const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error('Gemini timeout')), ms);
@@ -194,43 +194,70 @@ function withTimeout(promise, ms = 8000) {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-async function callGeminiWithFallback(promptText) {
+async function callGeminiWithFallback(promptText, temperature = 0.85) {
     for (const modelName of GEMINI_MODELS) {
         try {
-            const model = genAI.getGenerativeModel({ model: modelName });
-            const res = await withTimeout(model.generateContent(promptText), 8000);
+            const model = genAI.getGenerativeModel({
+                model: modelName,
+                generationConfig: { temperature }
+            });
+            const res = await withTimeout(model.generateContent(promptText), 9000);
             const text = res?.response?.text()?.trim();
+            if (text && !recentRepliesSet.has(text)) {
+                recentRepliesSet.add(text);
+                if (recentRepliesSet.size > 60) {
+                    const first = recentRepliesSet.values().next().value;
+                    recentRepliesSet.delete(first);
+                }
+                return text;
+            }
             if (text) return text;
         } catch {}
     }
     return null;
 }
 
-function buildSmartFallbackReply(userText) {
+function buildDynamicFallbackReply(userText) {
     const clean = String(userText || '').trim();
     const hasHindi = /[\u0900-\u097F]/.test(clean);
+    const seed = Math.floor(Math.random() * 1000);
+
     if (hasHindi) {
-        return `हाँ भाई, बिल्कुल! "${clean.slice(0, 70)}" — बताओ आगे क्या करना है?`;
+        const hiOptions = [
+            `"${clean.slice(0, 60)}" — इस पर क्या करना है, साफ बताओ (#${seed % 99 + 1})?`,
+            `तुमने कहा "${clean.slice(0, 60)}" — आगे का प्लान क्या रखें?`,
+            `"${clean.slice(0, 60)}" के बारे में और डिटेल दो, मैं सुन रहा हूँ।`
+        ];
+        return hiOptions[seed % hiOptions.length];
     }
-    return `Haan bhai, bilkul! "${clean.slice(0, 70)}" — batao aage kya karna hai?`;
+
+    const enOptions = [
+        `"${clean.slice(0, 60)}" — what's the next move on this?`,
+        `Got your message: "${clean.slice(0, 60)}" — tell me how you want to handle it.`,
+        `Reading "${clean.slice(0, 60)}" — give me more details if needed.`
+    ];
+    return enOptions[seed % enOptions.length];
 }
 
 async function generateMatchingLanguageReply(userText) {
+    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const prompt =
-        `Act as a sharp, friendly person chatting on WhatsApp. ` +
-        `Reply in the exact same language and script as the user's message (Hindi, Hinglish, English, etc.). ` +
-        `Keep it natural, punchy, and brief (1-2 lines).\n\n` +
-        `Message: ${userText}`;
-    const reply = await callGeminiWithFallback(prompt);
-    return (reply || buildSmartFallbackReply(userText)).slice(0, 600);
+        `You are a smart WhatsApp chat assistant. Reply directly and specifically to the user's message below. ` +
+        `Match the exact language and script of the user's message (Hindi, Hinglish, English, etc.). ` +
+        `Never give a generic repeated template; answer what was actually said. Keep it concise (1-2 lines). [ctx:${uniqueTag}]\n\n` +
+        `User message: ${userText}`;
+    const reply = await callGeminiWithFallback(prompt, 0.9);
+    return (reply || buildDynamicFallbackReply(userText)).slice(0, 600);
 }
 
 async function generateDirectAI(userPrompt) {
+    const uniqueTag = `${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const prompt =
-        `Reply naturally, clearly, and powerfully in the same language as the user's question.\n\n` +
+        `Answer the user's question directly, accurately, and in the same language as the question. ` +
+        `Do not repeat previous answers. [ctx:${uniqueTag}]\n\n` +
         `Question: ${userPrompt}`;
-    const reply = await callGeminiWithFallback(prompt);
-    return (reply || buildSmartFallbackReply(userPrompt)).slice(0, 1600);
+    const reply = await callGeminiWithFallback(prompt, 0.85);
+    return (reply || buildDynamicFallbackReply(userPrompt)).slice(0, 1600);
 }
 
 // ─────────────────────────────────────────────
@@ -313,7 +340,7 @@ const AUTO_REPLY_BANNER = (enabled) => boxCard(
     [
         `*${g('THIS CHAT')}* : ${enabled ? `🟢 ${g('ACTIVE')}` : `🔴 ${g('DISABLED')}`}`,
         `*${g('REACTIONS')}* : ⚡ ${g('RANDOM EMOJI POOL')}`,
-        `*${g('AI ENGINE')}* : 🧠 ${g('INSTANT SMART REPLY')}`
+        `*${g('AI ENGINE')}* : 🧠 ${g('DYNAMIC SMART REPLY')}`
     ]
 );
 
@@ -325,7 +352,7 @@ const BOTS_LIST_BANNER = (list) => boxCard(
 );
 
 const MENU_TEXT = () => boxCard(
-    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18 🚩`,
+    `🎀 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗠𝗔𝗡𝗔𝗚𝗘𝗥 v18.1 🚩`,
     [
         `*${g('PREFIX')}*     : ${PREFIX}  |  *${g('SAFE')}* : ${MIN_SAFE_DELAY_MS}ms`,
         `▶️ ${PREFIX}start / 🛑 ${PREFIX}killall ➔ ${g('control engine')}`,
@@ -454,6 +481,7 @@ class Session {
         this.pairingBusy = false;
 
         this.reconnectTimer = null;
+        this.pairingWatchdog = null;
         this.dedupeTimer = null;
         this.stopped = false;
         this.sendQueue = Promise.resolve();
@@ -482,6 +510,7 @@ class Session {
 
     clearTimers() {
         if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+        if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
         if (this.dedupeTimer) { clearInterval(this.dedupeTimer); this.dedupeTimer = null; }
     }
 
@@ -528,7 +557,7 @@ class Session {
         let lastErr = null;
         for (let attempt = 1; attempt <= 4; attempt++) {
             try {
-                await delay(1600 * attempt);
+                await delay(1500 * attempt);
                 const rawCode = await sock.requestPairingCode(this.phone);
                 const clean = String(rawCode || '')
                     .replace(/[^A-Z0-9]/gi, '')
@@ -554,7 +583,16 @@ class Session {
         console.log(`╚══════════════════════════════════════════════╝\n`);
     }
 
-    // Generates pairing code for !addbot / !relink without overlapping reconnects
+    armPairingWatchdog(authDir) {
+        if (this.pairingWatchdog) clearTimeout(this.pairingWatchdog);
+        // If pairing stays stuck in login/pending for > 90s without opening, release lock cleanly
+        this.pairingWatchdog = setTimeout(() => {
+            if (this.stopped || this.online) return;
+            this.pairingBusy = false;
+            console.log(`[PAIR TIMEOUT] +${this.phone} did not finish login in 90s; resetting state.`);
+        }, 90000);
+    }
+
     async pairFreshInChat() {
         if (!this.phone) throw new Error('Invalid phone number');
 
@@ -572,6 +610,7 @@ class Session {
 
         this.pairingBusy = true;
         this.otpPrinted = true;
+        this.armPairingWatchdog(authDir);
 
         try {
             const { state, saveCreds } = await useMultiFileAuthState(authDir);
@@ -582,7 +621,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Desktop"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -597,6 +636,7 @@ class Session {
             sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped) return;
                 if (connection === "open") {
+                    if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
                     this.online = true;
                     this.pairingBusy = false;
                     if (this.socket?.user?.id) {
@@ -605,18 +645,34 @@ class Session {
                     if (this.socket?.user?.lid) {
                         this.selfLid = this.socket.user.lid.split(':')[0] + '@lid';
                     }
-                    console.log(`[ONLINE] +${this.phone} linked & ready`);
+                    console.log(`[ONLINE] +${this.phone} linked & active`);
+                    if (this.requesterJid) {
+                        await this.sendInstant(
+                            this.requesterJid,
+                            boxCard(`✅ 𝗕𝗢𝗧 𝗟𝗜𝗡𝗞𝗘𝗗 ✅`, [
+                                `*${g('NUMBER')}* : +${this.phone}`,
+                                `*${g('STATUS')}* : 🟢 ${g('CONNECTED & READY')}`
+                            ])
+                        );
+                    }
                 } else if (connection === "close") {
                     this.online = false;
-                    if (this.pairingBusy || this.stopped) return;
+                    if (this.stopped) return;
                     const code = lastDisconnect?.error?.output?.statusCode;
                     if (code === DisconnectReason.loggedOut) {
+                        this.pairingBusy = false;
                         removeDirSafe(authDir);
-                    } else if (!this.reconnectTimer) {
+                        return;
+                    }
+                    // Allow reconnect once pairing code is already issued so login handshake completes
+                    if (!this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped && !this.pairingBusy) this.init();
-                        }, 2500);
+                            if (!this.stopped) {
+                                this.pairingBusy = false;
+                                this.init();
+                            }
+                        }, 2000);
                     }
                 }
             });
@@ -628,6 +684,7 @@ class Session {
             return formattedCode;
         } catch (err) {
             this.pairingBusy = false;
+            if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
             throw err;
         }
     }
@@ -695,7 +752,7 @@ class Session {
                 version,
                 logger: pino({ level: "silent" }),
                 printQRInTerminal: false,
-                browser: Browsers.ubuntu("Chrome"),
+                browser: Browsers.macOS("Desktop"),
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
                 markOnlineOnConnect: false,
@@ -714,6 +771,7 @@ class Session {
                 if (this.stopped) return;
 
                 if (connection === "open") {
+                    if (this.pairingWatchdog) { clearTimeout(this.pairingWatchdog); this.pairingWatchdog = null; }
                     this.online = true;
                     this.pairingBusy = false;
                     if (this.socket?.user?.id) {
@@ -725,7 +783,7 @@ class Session {
                     console.log(`[ONLINE] +${this.phone} logged in`);
                 } else if (connection === "close") {
                     this.online = false;
-                    if (this.pairingBusy || this.stopped) return;
+                    if (this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     if (statusCode === DisconnectReason.loggedOut) {
                         removeDirSafe(authDir);
@@ -733,7 +791,7 @@ class Session {
                     if (statusCode !== DisconnectReason.loggedOut && !this.reconnectTimer) {
                         this.reconnectTimer = setTimeout(() => {
                             this.reconnectTimer = null;
-                            if (!this.stopped && !this.pairingBusy) this.init();
+                            if (!this.stopped) this.init();
                         }, 2500);
                     }
                 }
@@ -1518,10 +1576,10 @@ class Hub {
 }
 
 console.log(`
-◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18  ⚡
+◈  𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧 v18.1 ⚡
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Primary Number    : ${CONFIGURED_BOT_NUMBER ? `+${CONFIGURED_BOT_NUMBER}` : 'NOT SET'}
-  Browser Profile   : Ubuntu Chrome (Pairing Ready)
+  Browser Profile   : macOS Desktop (Stable)
   Emoji Pool Loaded : ${REACTION_POOL.length} Emojis
   Initial Mode      : STANDBY (Send !start to run)
   Port              : ${PORT}
