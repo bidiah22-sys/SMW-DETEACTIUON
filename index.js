@@ -1,4 +1,3 @@
-
 // ╔══════════════════════════════════════════════╗
 // ║                  𝗦𝗠𝗪 𝗜𝗢𝗦                     ║
 // ║         Multi-Bot WhatsApp Manager           ║
@@ -34,7 +33,6 @@ const ANTI_BAN_JITTER_MS = 350;
 // AUTO-READ, MASSIVE EMOJI POOL & PER-CHAT AUTO-REPLY SETTINGS
 const AUTO_READ_MESSAGES     = true;
 const AUTO_REPLY_COOLDOWN_MS = 1200;
-const PAIR_COOLDOWN_MS       = 12000;
 const MAX_WARNS_BEFORE_KICK  = 3;
 // =========================================================================
 
@@ -65,7 +63,6 @@ function pickRandomReaction() {
     return REACTION_POOL[idx];
 }
 
-// Supports Indian (+91 / 91 / 091 / 10-digit) and any international E.164 number
 function normalizeStrictPhone(rawInput) {
     if (!rawInput) return '';
     let digits = String(rawInput).replace(/\D/g, '');
@@ -106,9 +103,6 @@ function removeDirSafe(dirPath) {
     } catch {}
 }
 
-// ─────────────────────────────────────────────
-//  PERSISTENCE HELPERS
-// ─────────────────────────────────────────────
 const ensureDir = p => {
     const d = p.includes('/') ? p.substring(0, p.lastIndexOf('/')) : '.';
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
@@ -140,7 +134,6 @@ if (!gcSettings.welcome) gcSettings.welcome = {};
 if (!gcSettings.warns) gcSettings.warns = {};
 
 let GLOBAL_EPOCH = 1;
-const GLOBAL_ISSUED_CODES = new Set();
 let latestPairingInfo = null;
 
 let runtimeState = readJson(PATH_STATE, {
@@ -153,15 +146,11 @@ if (!runtimeState.autoReplyChats || typeof runtimeState.autoReplyChats !== 'obje
 }
 
 function saveRuntimeState() {
-    try {
-        writeJson(PATH_STATE, runtimeState);
-    } catch {}
+    try { writeJson(PATH_STATE, runtimeState); } catch {}
 }
 
 function saveGcSettings() {
-    try {
-        writeJson(PATH_GC, gcSettings);
-    } catch {}
+    try { writeJson(PATH_GC, gcSettings); } catch {}
 }
 
 function normalizeChatKey(chatJid) {
@@ -178,11 +167,8 @@ function isChatAutoReplyOn(sessionPhone, chatJid) {
 function setChatAutoReply(sessionPhone, chatJid, enabled) {
     const cleanChat = normalizeChatKey(chatJid);
     const key = `${sessionPhone}::${cleanChat}`;
-    if (enabled) {
-        runtimeState.autoReplyChats[key] = true;
-    } else {
-        delete runtimeState.autoReplyChats[key];
-    }
+    if (enabled) runtimeState.autoReplyChats[key] = true;
+    else delete runtimeState.autoReplyChats[key];
     saveRuntimeState();
 }
 
@@ -264,9 +250,7 @@ function startKeepAlive() {
         : `http://127.0.0.1:${PORT}/health`;
 
     setInterval(async () => {
-        try {
-            await fetch(pingUrl);
-        } catch {}
+        try { await fetch(pingUrl); } catch {}
     }, intervalMs);
 }
 
@@ -348,7 +332,7 @@ const AUTO_REPLY_BANNER = (enabled) => boxCard(
 const BOTS_LIST_BANNER = (list) => boxCard(
     `📱 𝗦𝗠𝗪 𝗜𝗢𝗦 𝗕𝗢𝗧𝗦 (${list.length}) 📱`,
     list.map((s, idx) =>
-        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('CONNECTED')}` : `🟡 ${g('LINKING')}`}`
+        `*${idx + 1}.* +${s.phone} ➔ ${s.online ? `🟢 ${g('CONNECTED')}` : `🟡 ${g('SAVED / READY')}`}`
     )
 );
 
@@ -414,6 +398,7 @@ const isOwner = (j, sessionSelf = null, sessionLid = null) => {
     if (!cleanJid) return false;
     if (sessionSelf && String(sessionSelf).split('@')[0].split(':')[0] === cleanJid) return true;
     if (sessionLid && String(sessionLid).split('@')[0].split(':')[0] === cleanJid) return true;
+    if (CONFIGURED_BOT_NUMBER && cleanJid === CONFIGURED_BOT_NUMBER) return true;
     return userData.owners.some(o => String(o).split('@')[0].split(':')[0] === cleanJid) ||
            ADMIN_NUMBERS.some(num => num && num.includes(cleanJid));
 };
@@ -466,13 +451,12 @@ function hasLink(text) {
 //  SESSION MANAGER (ISOLATED & CRASH-SAFE)
 // ═════════════════════════════════════════════
 class Session {
-    constructor(id, phone, hub, requesterJid = null, freshAuth = false, autoPairOnInit = true) {
+    constructor(id, phone, hub, requesterJid = null, freshAuth = false) {
         this.id = id;
         this.phone = normalizeStrictPhone(phone);
         this.hub = hub;
         this.requesterJid = requesterJid;
         this.freshAuth = freshAuth;
-        this.autoPairOnInit = autoPairOnInit;
         this.socket = null;
         this.online = false;
         this.self = null;
@@ -482,8 +466,6 @@ class Session {
 
         this.pairingInProgress = false;
         this.pairingDone = false;
-        this.lastPairAttemptAt = 0;
-        this.pairTimer = null;
         this.reconnectTimer = null;
         this.dedupeTimer = null;
         this.stopped = false;
@@ -502,12 +484,8 @@ class Session {
             for (const [k, v] of this.processedMsgs) {
                 if (now - v > 90000) this.processedMsgs.delete(k);
             }
-            if (this.msgCache.size > 400) {
-                this.msgCache.clear();
-            }
-            if (this.sentByBotIds.size > 500) {
-                this.sentByBotIds.clear();
-            }
+            if (this.msgCache.size > 400) this.msgCache.clear();
+            if (this.sentByBotIds.size > 500) this.sentByBotIds.clear();
         }, 90000);
     }
 
@@ -516,18 +494,8 @@ class Session {
     }
 
     clearTimers() {
-        if (this.pairTimer) {
-            clearTimeout(this.pairTimer);
-            this.pairTimer = null;
-        }
-        if (this.reconnectTimer) {
-            clearTimeout(this.reconnectTimer);
-            this.reconnectTimer = null;
-        }
-        if (this.dedupeTimer) {
-            clearInterval(this.dedupeTimer);
-            this.dedupeTimer = null;
-        }
+        if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+        if (this.dedupeTimer) { clearInterval(this.dedupeTimer); this.dedupeTimer = null; }
     }
 
     stopAllLoops() {
@@ -552,9 +520,7 @@ class Session {
         this.clearTimers();
         this.stopAllLoops();
         try {
-            if (this.socket?.ev?.removeAllListeners) {
-                this.socket.ev.removeAllListeners();
-            }
+            if (this.socket?.ev?.removeAllListeners) this.socket.ev.removeAllListeners();
         } catch {}
         try {
             if (this.socket?.ws?.close) this.socket.ws.close();
@@ -605,6 +571,7 @@ class Session {
         }
     }
 
+    // Sirf !addbot / !relink call karne par hi naya pairing code banega
     async generateFreshPairingCodeNow() {
         if (!this.phone) throw new Error('Invalid phone number');
 
@@ -620,7 +587,6 @@ class Session {
             this.socket = null;
         }
 
-        this.autoPairOnInit = false;
         this.pairingDone = false;
         this.awaitingPairingScan = true;
         this.notifiedConnectedOnce = false;
@@ -674,11 +640,6 @@ class Session {
             const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
             this.pairingDone = true;
             latestPairingInfo = { phone: `+${this.phone}`, code: formatted, updatedAt: Date.now() };
-            this.lastPairAttemptAt = Date.now();
-
-            console.log(`\n========================================`);
-            console.log(`SINGLE PAIRING CODE (+${this.phone}): ${formatted}`);
-            console.log(`========================================\n`);
 
             return formatted;
         } finally {
@@ -702,65 +663,6 @@ class Session {
                 );
             }
         }
-    }
-
-    triggerSingleCodeOnce(sock) {
-        if (
-            !this.autoPairOnInit ||
-            this.stopped ||
-            !sock ||
-            this.online ||
-            this.pairingDone ||
-            this.pairingInProgress ||
-            this.pairTimer
-        ) return;
-
-        if (sock.authState?.creds?.registered) {
-            this.pairingDone = true;
-            return;
-        }
-
-        const now = Date.now();
-        if (now - this.lastPairAttemptAt < PAIR_COOLDOWN_MS) return;
-
-        this.pairingInProgress = true;
-        this.pairTimer = setTimeout(async () => {
-            this.pairTimer = null;
-            if (this.stopped || this.online || this.pairingDone) {
-                this.pairingInProgress = false;
-                return;
-            }
-            this.lastPairAttemptAt = Date.now();
-            try {
-                if (sock.authState?.creds?.registered) {
-                    this.pairingDone = true;
-                    return;
-                }
-                const cleanCode = await this.requestCodeWithRetry(sock);
-                const formatted = cleanCode.match(/.{1,4}/g)?.join('-') || cleanCode;
-                const uniqueKey = `${this.phone}__${formatted}`;
-                if (GLOBAL_ISSUED_CODES.has(uniqueKey)) {
-                    this.pairingDone = true;
-                    return;
-                }
-
-                GLOBAL_ISSUED_CODES.add(uniqueKey);
-                this.pairingDone = true;
-                latestPairingInfo = { phone: `+${this.phone}`, code: formatted, updatedAt: Date.now() };
-
-                console.log(`\n========================================`);
-                console.log(`SINGLE PAIRING CODE (+${this.phone}): ${formatted}`);
-                console.log(`========================================\n`);
-
-                const labelMsg = `${TAG}\n\nPairing code for +${this.phone}:`;
-                await this.hub.sendSingleCodeMessages(labelMsg, formatted, this.requesterJid);
-            } catch (e) {
-                this.pairingDone = false;
-                console.log(`[PAIR ERR] +${this.phone}:`, e?.message || e);
-            } finally {
-                this.pairingInProgress = false;
-            }
-        }, 2500);
     }
 
     async init() {
@@ -804,29 +706,14 @@ class Session {
 
             this.socket.ev.on("creds.update", saveCreds);
 
-            if (this.autoPairOnInit && !this.socket.authState?.creds?.registered && !this.pairingDone) {
-                this.triggerSingleCodeOnce(this.socket);
-            }
-
             this.socket.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
                 if (this.stopped) return;
 
                 if (connection === "open") {
-                    if (this.pairTimer) {
-                        clearTimeout(this.pairTimer);
-                        this.pairTimer = null;
-                    }
                     await this.markSessionConnectedAndNotify();
                     console.log(`[${this.id}] Connected: +${this.phone}`);
-                } else if (connection === "connecting" && this.autoPairOnInit && !this.socket.authState?.creds?.registered && !this.pairingDone) {
-                    this.triggerSingleCodeOnce(this.socket);
                 } else if (connection === "close") {
                     this.online = false;
-                    if (this.pairTimer) {
-                        clearTimeout(this.pairTimer);
-                        this.pairTimer = null;
-                    }
-                    this.pairingInProgress = false;
                     if (this.stopped) return;
                     const statusCode = lastDisconnect?.error?.output?.statusCode;
                     if (statusCode === DisconnectReason.loggedOut) {
@@ -861,10 +748,7 @@ class Session {
                 const chat = raw.key.remoteJid;
                 if (chat === 'status@broadcast') continue;
 
-                if (raw.key.id) {
-                    this.msgCache.set(raw.key.id, raw);
-                }
-
+                if (raw.key.id) this.msgCache.set(raw.key.id, raw);
                 if (!this.dedupeLocal(raw.key.id)) continue;
 
                 const content = extractMessageContent(raw.message) || raw.message;
@@ -878,8 +762,9 @@ class Session {
                 const cmd = body.toLowerCase();
 
                 const isDM = !isGroup;
-                const isOwn = Boolean(raw.key.fromMe) || isOwner(sender, this.self, this.selfLid);
-                const allowed = isOwn || isSub(sender, chat);
+                const isFromMe = Boolean(raw.key.fromMe);
+                const isOwn = isFromMe || isOwner(sender, this.self, this.selfLid);
+                const allowed = isFromMe || isOwn || isSub(sender, chat);
 
                 if (allowed && (cmd === `${PREFIX}start` || cmd === '+start')) {
                     this.hub.resumeAllBots();
@@ -895,7 +780,7 @@ class Session {
 
                 if (runtimeState.botPaused) continue;
 
-                if (AUTO_READ_MESSAGES && !raw.key.fromMe) {
+                if (AUTO_READ_MESSAGES && !isFromMe) {
                     this.socket?.readMessages([raw.key]).catch(() => {});
                 }
 
@@ -1344,7 +1229,7 @@ class Session {
                 if (
                     !runtimeState.botPaused &&
                     isChatAutoReplyOn(this.phone, chat) &&
-                    !raw.key.fromMe &&
+                    !isFromMe &&
                     body &&
                     !isCommandText
                 ) {
@@ -1577,23 +1462,6 @@ class Hub {
         }
     }
 
-    async sendSingleCodeMessages(labelMsg, cleanCodeOnly, requesterJid = null) {
-        const senderSession = this.getPrimarySession();
-        if (!senderSession) return;
-
-        if (PRIMARY_OWNER_JID) {
-            await senderSession.sendInstant(PRIMARY_OWNER_JID, labelMsg);
-            await delay(300);
-            await senderSession.sendInstant(PRIMARY_OWNER_JID, cleanCodeOnly);
-        }
-
-        if (requesterJid && requesterJid !== PRIMARY_OWNER_JID) {
-            await senderSession.sendInstant(requesterJid, labelMsg);
-            await delay(300);
-            await senderSession.sendInstant(requesterJid, cleanCodeOnly);
-        }
-    }
-
     loadSavedNumbers() {
         const saved = readJson(PATH_BOTS, { numbers: [] });
         const list = Array.isArray(saved.numbers) ? saved.numbers : [];
@@ -1619,7 +1487,7 @@ class Hub {
         }
 
         const id = String(this.counter++);
-        const session = new Session(id, clean, this, requesterJid, forceFresh, false);
+        const session = new Session(id, clean, this, requesterJid, forceFresh);
         this.sessions.set(id, session);
 
         const allNums = [...this.sessions.values()].filter(x => !x.stopped && x.phone).map(x => x.phone);
@@ -1651,12 +1519,14 @@ class Hub {
         saveRuntimeState();
     }
 
+    // Boot par koi auto-pairing code nahi banega — sirf saved numbers connect honge
     async boot() {
         const numbers = this.loadSavedNumbers();
         if (numbers.length === 0) return;
+        this.saveNumbers(numbers);
         for (const num of numbers) {
             const id = String(this.counter++);
-            const session = new Session(id, num, this, null, false, true);
+            const session = new Session(id, num, this, null, false);
             this.sessions.set(id, session);
             await session.init();
             await delay(1200);
